@@ -209,7 +209,7 @@ if (isset($_POST['baseDir'])) {
     $baseDir = $_COOKIE['baseDir'] ?? $defaultBaseDir;
 }
 
-// Handle directory navigation - FIXED: Proper directory handling
+// Handle directory navigation
 if (isset($_GET['d']) && !empty($_GET['d'])) {
     $currentDir = base64_decode($_GET['d']);
     $currentDir = realpath($currentDir) ?: $currentDir;
@@ -543,6 +543,14 @@ if (isset($_POST['ren'])) {
         }
     }
     exit;
+}
+
+// Edit File handler - FIXED: This was missing!
+if (isset($_POST['edit'])) {
+    $isPostAction = true;
+    $filePath = base64_decode($_POST['edit']);
+    $fileDir = dirname($filePath);
+    // This will show the edit form in the HTML section below
 }
 
 // If it's a POST action that doesn't match any handler, redirect to avoid white screen
@@ -1377,19 +1385,24 @@ if (!isset($_POST['edit']) && !isset($_POST['ren'])) {
     }
 }
 
-// Edit File (only shows when editing)
+// Edit File (only shows when editing) - FIXED: This was the main issue!
 if (isset($_POST['edit'])) {
     $filePath = base64_decode($_POST['edit']);
     $fileDir = dirname($filePath);
     if (file_exists($filePath)) {
         echo "<style>.file-list{display:none;}</style>";
-        echo "<a href=\"javascript:void(0);\" onclick=\"RBPpostDir('" . addslashes($fileDir) . "')\">Back</a>";
-        echo "<form method=\"post\">
-            <input type=\"hidden\" name=\"obj\" value=\"" . $_POST['edit'] . "\">
-            <input type=\"hidden\" name=\"d\" value=\"" . base64_encode($fileDir) . "\">
-            <textarea name=\"content\">" . htmlspecialchars(file_get_contents($filePath)) . "</textarea>
-            <center><button type=\"submit\" name=\"save\" class=\"tool-button\">Save</button></center>
-            </form>";
+        echo "<div style='padding: 20px;'>";
+        echo "<a href=\"javascript:void(0);\" onclick=\"RBPpostDir('" . addslashes($fileDir) . "')\" style='color: white; text-decoration: none; font-weight: bold;'>&larr; Back</a>";
+        echo "<h3 style='color: white; margin: 15px 0;'>Editing: " . basename($filePath) . "</h3>";
+        echo "<form method=\"post\">";
+        echo "<input type=\"hidden\" name=\"obj\" value=\"" . $_POST['edit'] . "\">";
+        echo "<input type=\"hidden\" name=\"d\" value=\"" . base64_encode($fileDir) . "\">";
+        echo "<textarea name=\"content\" style='width: 100%; height: 500px; background: #1a1a1a; color: #fff; border: 1px solid #444; border-radius: 5px; padding: 15px; font-family: monospace;'>" . htmlspecialchars(file_get_contents($filePath)) . "</textarea>";
+        echo "<div style='text-align: center; margin-top: 15px;'>";
+        echo "<button type=\"submit\" name=\"save\" class=\"tool-button\" style='padding: 10px 20px; font-size: 14px;'>Save File</button>";
+        echo "</div>";
+        echo "</form>";
+        echo "</div>";
     }
 }
 
