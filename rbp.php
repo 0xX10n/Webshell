@@ -834,18 +834,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
             color: #aaa;
         }
         
-        .status-bar {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            background: #1a1a1a;
-            padding: 5px 10px;
-            border-top: 1px solid #333;
-            font-size: 12px;
-            z-index: 100;
-        }
-        
         .results-popup {
             display: none;
             position: fixed;
@@ -1336,11 +1324,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
                 <p><small>Note: This tool works when run inside a config folder</small></p>
             </div>
         </div>
-    </div>
-
-    <!-- Status Bar -->
-    <div class="status-bar" id="statusBar">
-        Ready - Reaper Byte PH Activated
     </div>
 
 <?php
