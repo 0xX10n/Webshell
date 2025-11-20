@@ -880,13 +880,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
         
         function RBPpostEdit(path) {
             var form = document.createElement("form");
-                form.method = "post";
-                var input = document.createElement("input");
-                input.name = "edit";
-                input.value = btoa(path);
-                form.appendChild(input);
-                document.body.appendChild(form);
-                form.submit();
+            form.method = "post";
+            var input = document.createElement("input");
+            input.name = "edit";
+            input.value = btoa(path);
+            form.appendChild(input);
+            document.body.appendChild(form);
+            form.submit();
         }
         
         function RBPpostRen(path, name) {
