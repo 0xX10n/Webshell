@@ -1442,7 +1442,7 @@ if (isset($_SESSION['adminer_result'])) {
                     
                     if (isset($result['login_url'])) {
                         echo '<a href="' . htmlspecialchars($result['login_url']) . '" target="_blank" class="login-link">';
-                        echo '🔐 Login to WordPress Admin';
+                        echo 'Login to WordPress Admin';
                         echo '</a>';
                         echo '<p style="color: #ccc; font-size: 14px; margin-top: 10px;">';
                         echo 'Login URL: ' . htmlspecialchars($result['login_url']);
