@@ -1205,7 +1205,7 @@ if (isset($_SESSION['adminer_result'])) {
 <body>
     <div class="header">
         <div class="logo-container">
-            <img src="https://i.ibb.co/0jsfxQpc/unnamed-11-removebg-preview-1.png" class="logo" alt="RBP Logo">
+            <img src="https://i.ibb.co/274V1hJ0/unnamed-14-removebg-preview.png" class="logo" alt="RBP Logo">
             <div class="logo-text">Reaper Byte Philippines</div>
         </div>
         
