@@ -700,6 +700,11 @@ if (isset($_GET['db_table'])) {
         $_SESSION['db_current_table'] = $table;
         $_SESSION['db_table_structure'] = RBPgetTableStructure($_SESSION['db_connection']['mysqli'], $table);
         $_SESSION['db_table_data'] = RBPgetTableData($_SESSION['db_connection']['mysqli'], $table);
+        
+        // Auto-execute SELECT query for the table
+        $autoQuery = "SELECT * FROM `$table` LIMIT 50";
+        $_SESSION['db_auto_query'] = $autoQuery;
+        $_SESSION['db_query_result'] = RBPexecuteQuery($_SESSION['db_connection']['mysqli'], $autoQuery);
     }
     header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
     exit;
@@ -716,6 +721,7 @@ if (isset($_POST['db_disconnect'])) {
     unset($_SESSION['db_table_structure']);
     unset($_SESSION['db_table_data']);
     unset($_SESSION['db_query_result']);
+    unset($_SESSION['db_auto_query']);
     header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
     exit;
 }
@@ -1336,6 +1342,16 @@ if (isset($_SESSION['adminer_result'])) {
             padding: 10px;
             font-family: monospace;
         }
+        
+        .auto-query {
+            background: #1a3c1a;
+            border: 1px solid #4CAF50;
+            border-radius: 5px;
+            padding: 10px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 12px;
+        }
     </style>
 </head>
 <body>
@@ -1371,6 +1387,14 @@ if (isset($_SESSION['adminer_result'])) {
                 <button type="submit" name="db_disconnect" class="tool-button" style="background: #f44336; border-color: #f44336;">Disconnect</button>
             </form>
         </div>
+
+        <!-- Auto-executed Query Display -->
+        <?php if (isset($_SESSION['db_auto_query'])): ?>
+        <div class="auto-query">
+            <strong>Auto-executed Query:</strong><br>
+            <code><?php echo htmlspecialchars($_SESSION['db_auto_query']); ?></code>
+        </div>
+        <?php unset($_SESSION['db_auto_query']); endif; ?>
 
         <!-- Database Query Box -->
         <div class="db-query-box">
@@ -1470,7 +1494,7 @@ if (isset($_SESSION['adminer_result'])) {
 
             <!-- Table Data -->
             <div style="margin-top: 20px;">
-                <h5>Data (First 100 rows)</h5>
+                <h5>Data (First 50 rows)</h5>
                 <?php if (!empty($_SESSION['db_table_data'])): ?>
                     <div style="max-height: 400px; overflow: auto;">
                         <table class="db-table">
