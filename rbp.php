@@ -67,7 +67,8 @@ function RBPautoDetectBaseDir() {
         '/home/*/www',
         '/home/*/web',
         '/home/*/*/public_html'
-    ];
+        '/home/*/
+];
     
     $currentUser = function_exists('posix_getpwuid') ? (posix_getpwuid(posix_geteuid())['name'] ?? 'unknown') : 'unknown';
     
